@@ -1,0 +1,32 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+.env*
+
+# uv-specific Python version cache
+.python-version
+
+# PyCharm project files
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Data Relative
+data/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
