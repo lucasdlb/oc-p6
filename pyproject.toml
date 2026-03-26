@@ -1,17 +1,25 @@
 [project]
 name = "oc-p6"
 version = "0.1.0"
-description = "Add your description here"
+description = "Credit Risk ML POC - Predicting credit default"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pytest-coverage>=0.0",
+    "polars>=1.0.0",
+    "pyarrow>=15.0.0",
+    "scikit-learn>=1.5.0",
+    "lightgbm>=4.0.0",
+    "mlflow>=3.0.0",
+    "shap>=0.45.0",
+    "pyyaml>=6.0.0",
+    "pydantic>=2.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
+    "pytest-cov>=7.1.0",
     "ruff>=0.15.7",
     "ty>=0.0.24",
 ]
@@ -28,17 +36,14 @@ addopts = """
     --cov-report=html
 """
 
-# -------------------------
-# Coverage configuration
-# -------------------------
 [tool.coverage.run]
-branch = true # measure branch coverage (better than line coverage)
+branch = true
 source = ["src"]
+omit = ["tests/*"]
 
 [tool.coverage.report]
-#fail_under = 90
-show_missing = true # display uncovered lines
-skip_covered = true # hide fully covered files
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100
@@ -47,3 +52,7 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
 ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

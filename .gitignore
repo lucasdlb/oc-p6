@@ -23,10 +23,35 @@ Thumbs.db
 # Logs
 *.log
 
-# Data Relative
+# ML artifacts
+mlruns/
+mlflow.db
+*.db
+models/
+!src/credit-risk/models/
+!src/credit-risk/models/*.py$
+*/__pycache__/*
+*.pkl
+*.parquet
+
+# Data
 data/
+!src/credit-risk/data/
+!src/credit-risk/data/*.py
+*.csv
+
+ /notebooks/
+ *.ipynb_checkpoints
+ notebooks/*.ipynb
+ notebooks/*.py
 
 # Coverage
 .coverage
 coverage.xml
 htmlcov/
+
+# Opencode
+.agents/
+AGENTS.md
+opencode.json
+/notebooks/
