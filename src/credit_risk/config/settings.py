@@ -1,10 +1,72 @@
-"""Configuration settings using Pydantic."""
+"""Configuration settings using Pydantic.
 
+Two-layer config:
+  - AppSettings: paths + runtime config from env vars / .env (12-factor)
+  - Settings: ML hyperparams from YAML (versionable, experiment tracking)
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@lru_cache
+def _find_project_root() -> Path:
+    """Find project root by looking for pyproject.toml.
+
+    Walks up from this file until it finds a directory containing
+    ``pyproject.toml``.  Falls back to 4-levels-up for legacy structure.
+    """
+    current = Path(__file__).resolve()
+    for parent in [current] + list(current.parents):
+        if (parent / "pyproject.toml").exists():
+            return parent
+    # Fallback: repo root is 4 levels up from this file
+    return current.parent.parent.parent.parent
+
+
+PROJECT_ROOT = _find_project_root()
+
+
+# ---------------------------------------------------------------------------
+# App-level config: paths, env vars (12-factor, never committed)
+# ---------------------------------------------------------------------------
+
+
+class AppSettings(BaseSettings):
+    """Application-level configuration.
+
+    Loaded from environment variables (``CREDIT_RISK_*``) or ``.env`` file.
+    Override any field at runtime: ``CREDIT_RISK_DATA_PATH=/data uv run ...``
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="CREDIT_RISK_",
+        env_file=PROJECT_ROOT / ".env",
+        extra="ignore",
+    )
+
+    data_path: Path = Field(default=PROJECT_ROOT / "data")
+    models_path: Path = Field(default=PROJECT_ROOT / "models")
+    logs_path: Path = Field(default=PROJECT_ROOT / "logs")
+    output_path: Path = Field(default=PROJECT_ROOT / "output")
+
+
+@lru_cache
+def get_settings() -> AppSettings:
+    """Get application settings (lazy singleton)."""
+    return AppSettings()
+
+
+# ---------------------------------------------------------------------------
+# ML-specific config: hyperparams, feature lists (YAML-backed, versionable)
+# ---------------------------------------------------------------------------
 
 
 class DataConfig(BaseModel):
@@ -104,6 +166,11 @@ class LoggingConfig(BaseModel):
 
 
 class Settings(BaseModel):
+    """ML pipeline configuration.
+
+    Loaded from YAML or defaults.  Committed to git for experiment tracking.
+    """
+
     data: DataConfig = Field(default_factory=DataConfig)
     features: FeatureConfig = Field(default_factory=FeatureConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
@@ -122,6 +189,7 @@ class Settings(BaseModel):
 
 
 def load_settings(config_path: Path | str | None = None) -> Settings:
+    """Load ML settings from YAML or return defaults."""
     if config_path is None:
         return Settings()
     return Settings.from_yaml(Path(config_path))

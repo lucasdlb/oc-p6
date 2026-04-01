@@ -18,7 +18,7 @@ from credit_risk.models.trainer import ModelTrainer
 class TrainingPipeline:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings()
-        self.loader = DataLoader(self.settings.data)
+        self.loader = DataLoader()
         self.cleaner = DataCleaner(self.settings.data)
         self.encoder = CategoricalEncoder(self.settings.data)
         self.splitter = DataSplitter(self.settings.data)

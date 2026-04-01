@@ -5,8 +5,7 @@ import numpy as np
 from lightgbm import LGBMClassifier
 from sklearn.ensemble import RandomForestClassifier
 
-from credit_risk.config.paths import MODELS_DIR
-from credit_risk.config.settings import ModelConfig
+from credit_risk.config.settings import ModelConfig, get_settings
 
 
 class ModelTrainer:
@@ -29,6 +28,7 @@ class ModelTrainer:
                 reg_lambda=self.config.reg_lambda,
                 random_state=self.config.random_state,
                 n_jobs=self.config.n_jobs,
+                class_weight="balanced",
                 verbose=-1,
             )
         elif self.config.model_type == "sklearn":
@@ -37,6 +37,7 @@ class ModelTrainer:
                 max_depth=self.config.max_depth,
                 min_samples_split=self.config.min_child_samples,
                 random_state=self.config.random_state,
+                class_weight="balanced",
                 n_jobs=self.config.n_jobs,
             )
         else:
@@ -93,7 +94,7 @@ class ModelTrainer:
         import pickle
 
         if path is None:
-            path = str(MODELS_DIR / "model.pkl")
+            path = str(get_settings().models_path / "model.pkl")
         with open(path, "wb") as f:
             pickle.dump(self.model, f)
         return path

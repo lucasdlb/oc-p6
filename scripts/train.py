@@ -6,8 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from credit_risk.config.paths import MODELS_DIR
-from credit_risk.config.settings import load_settings
+from credit_risk.config.settings import get_settings, load_settings
 from credit_risk.pipeline.training_pipeline import TrainingPipeline
 from credit_risk.utils.logging import setup_logging
 
@@ -24,7 +23,8 @@ def main():
     logger = setup_logging(settings.logging)
     logger.info("Starting training pipeline")
 
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    models_path = get_settings().models_path
+    models_path.mkdir(parents=True, exist_ok=True)
 
     pipeline = TrainingPipeline(settings)
     result = pipeline.run()
@@ -32,7 +32,7 @@ def main():
     logger.info(f"Training complete. Metrics: {result['metrics']}")
     logger.info(f"Model trained with {result['train_shape'][1]} features")
 
-    model_path = MODELS_DIR / "model.pkl"
+    model_path = models_path / "model.pkl"
     pipeline.trainer.save(str(model_path))
     logger.info(f"Model saved to {model_path}")
 

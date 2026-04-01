@@ -9,8 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import polars as pl
 
-from credit_risk.config.paths import MODELS_DIR
-from credit_risk.config.settings import load_settings
+from credit_risk.config.settings import get_settings, load_settings
 from credit_risk.data.cleaner import DataCleaner
 from credit_risk.data.encoder import CategoricalEncoder
 from credit_risk.data.loader import DataLoader
@@ -31,11 +30,11 @@ def main():
     logger = setup_logging(settings.logging)
     logger.info("Starting prediction")
 
-    model_path = args.model or str(MODELS_DIR / "model.pkl")
+    model_path = args.model or str(get_settings().models_path / "model.pkl")
     with open(model_path, "rb") as f:
         model = pickle.load(f)
 
-    loader = DataLoader(settings.data)
+    loader = DataLoader()
     cleaner = DataCleaner(settings.data)
     aggregator = FeatureAggregator(settings.features)
     transformer = FeatureTransformer()
