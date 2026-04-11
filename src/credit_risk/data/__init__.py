@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 from credit_risk.data.loader import (
-    TABLES,
+    TABLES_CSV_NAMES,
     BaseDataLoader,
-    DataLoader,
     PDDataLoader,
     PLDataLoader,
     PLLazyDataLoader,
 )
 
 __all__ = [
-    "TABLES",
+    "TABLES_CSV_NAMES",
     "BaseDataLoader",
-    "DataLoader",
     "PDDataLoader",
     "PLDataLoader",
     "PLLazyDataLoader",

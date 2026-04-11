@@ -1,0 +1,50 @@
+# Debug mode - fast execution with small sample
+# Usage: RUN_MODE=debug uv run python scripts/rfe_cv_all.py
+
+[run]
+mode = "debug"
+sample_fraction = 0.05
+
+[splitter]
+test_size = 0.8
+n_splits = 2
+random_state = 42
+
+[model]
+max_depth = 3
+n_estimators = 50
+learning_rate = 0.05
+num_leaves = 31
+min_child_samples = 20
+subsample = 0.8
+colsample_bytree = 0.8
+reg_alpha = 0.1
+reg_lambda = 0.1
+n_jobs = -1
+class_weight = "balanced"
+verbose = -1
+
+[selection]
+min_features = 5
+tolerance = 0.01
+nb_remove_features = 1
+
+[importance]
+method = "inner"
+
+[mlflow]
+enabled = true
+experiment_name = "debug"
+
+[search]
+preset = "debug"
+max_grid_values = 1
+
+[tuning]
+n_trials = 2
+timeout = 300
+study_name = "debug_tuning"
+direction = "maximize"
+n_jobs = 1
+pruner = "median"
+models = ["lgbm", "random_forest", "hist_gbm", "lr"]

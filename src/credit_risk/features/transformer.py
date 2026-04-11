@@ -1,82 +1,58 @@
-"""Feature transformers for creating derived features."""
+"""Data transformer composite that delegates to table-specific transformers."""
 
-import polars as pl
+from __future__ import annotations
+
+import logging
+
 from polars import DataFrame
 
+from credit_risk.config import FeaturesConfig
+from credit_risk.config.experiment_config import DataSourcesConfig
+from credit_risk.features.transformers.registry import TransformerRegistry
 
-class FeatureTransformer:
-    def add_ratio_features(self, df: DataFrame) -> DataFrame:
-        if "AMT_CREDIT" in df.columns and "AMT_INCOME_TOTAL" in df.columns:
-            df = df.with_columns(
-                (pl.col("AMT_CREDIT") / pl.col("AMT_INCOME_TOTAL")).alias("CREDIT_INCOME_RATIO")
-            )
-        if "AMT_ANNUITY" in df.columns and "AMT_INCOME_TOTAL" in df.columns:
-            df = df.with_columns(
-                (pl.col("AMT_ANNUITY") / pl.col("AMT_INCOME_TOTAL")).alias("ANNUITY_INCOME_RATIO")
-            )
-        if "AMT_CREDIT" in df.columns and "AMT_ANNUITY" in df.columns:
-            df = df.with_columns(
-                (pl.col("AMT_CREDIT") / pl.col("AMT_ANNUITY")).alias("CREDIT_ANNUITY_RATIO")
-            )
-        return df
+logger = logging.getLogger(__name__)
 
-    def add_days_features(self, df: DataFrame) -> DataFrame:
-        if "DAYS_BIRTH" in df.columns:
-            df = df.with_columns((pl.col("DAYS_BIRTH") / -365).alias("YEARS_BIRTH"))
-        if "DAYS_EMPLOYED" in df.columns:
-            df = df.with_columns((pl.col("DAYS_EMPLOYED") / -365).alias("YEARS_EMPLOYED"))
-        if "DAYS_ID_PUBLISH" in df.columns:
-            df = df.with_columns((pl.col("DAYS_ID_PUBLISH") / -365).alias("YEARS_ID_PUBLISH"))
-        if "YEARS_BIRTH" in df.columns and "YEARS_EMPLOYED" in df.columns:
-            df = df.with_columns(
-                (pl.col("YEARS_BIRTH") - pl.col("YEARS_EMPLOYED")).alias("EMPLOYED_BIRTH_RATIO")
-            )
-        return df
 
-    def add_bureau_features(self, df: DataFrame) -> DataFrame:
-        if "DAYS_CREDIT_mean" in df.columns:
-            df = df.with_columns(
-                (pl.col("DAYS_CREDIT_mean") / -365).alias("YEARS_SINCE_CREDIT_mean")
-            )
-        if "AMT_CREDIT_SUM_mean" in df.columns and "AMT_CREDIT_SUM_sum" in df.columns:
-            df = df.with_columns(
-                (pl.col("AMT_CREDIT_SUM_mean") / pl.col("AMT_CREDIT_SUM_sum")).alias(
-                    "CREDIT_SUM_RATIO"
-                )
-            )
-        return df
+class DataTransformer:
+    """Composite transformer that delegates to table-specific implementations.
 
-    def add_previous_app_features(self, df: DataFrame) -> DataFrame:
-        if "AMT_APPLICATION_mean" in df.columns and "AMT_CREDIT_mean" in df.columns:
-            df = df.with_columns(
-                (pl.col("AMT_APPLICATION_mean") / pl.col("AMT_CREDIT_mean")).alias(
-                    "APPLICATION_CREDIT_RATIO"
-                )
-            )
-        if "AMT_DOWN_PAYMENT_mean" in df.columns and "AMT_CREDIT_mean" in df.columns:
-            df = df.with_columns(
-                (pl.col("AMT_DOWN_PAYMENT_mean") / pl.col("AMT_CREDIT_mean")).alias(
-                    "DOWN_PAYMENT_RATIO"
-                )
-            )
-        return df
+    Applies feature engineering transformations to aggregated features,
+    such as interactions, ratios, and derived features.
 
-    def add_installments_features(self, df: DataFrame) -> DataFrame:
-        if "PAYMENT_DIFF_mean" in df.columns and "AMT_PAYMENT_sum" in df.columns:
-            df = df.with_columns(
-                (pl.col("PAYMENT_DIFF_mean") / pl.col("AMT_PAYMENT_sum")).alias(
-                    "PAYMENT_DIFF_RATIO"
-                )
-            )
-        return df
+    Usage:
+        transformer = DataTransformer(data_sources=ds_config)
+        df = transformer.transform(df, table="bureau")
+    """
 
-    def transform(self, df: DataFrame) -> DataFrame:
-        df = self.add_ratio_features(df)
-        df = self.add_days_features(df)
-        if any("bureau" in col for col in df.columns):
-            df = self.add_bureau_features(df)
-        if any("previous" in col for col in df.columns):
-            df = self.add_previous_app_features(df)
-        if "PAYMENT_DIFF_mean" in df.columns:
-            df = self.add_installments_features(df)
-        return df
+    def __init__(
+        self,
+        config: FeaturesConfig | None = None,
+        data_sources: DataSourcesConfig | None = None,
+    ):
+        from credit_risk.config import cfg
+
+        self.config = config or cfg.data.features
+        self.data_sources = data_sources
+
+    def transform(self, df: DataFrame, table: str = "application") -> DataFrame:
+        """Transform features for a specific table.
+
+        Args:
+            df: Input dataframe
+            table: Table name (e.g., "bureau", "bureau_balance")
+
+        Returns:
+            Transformed dataframe with engineered features
+        """
+        method = self._get_transform_method(table)
+        logger.info(f"Transforming table '{table}' with method '{method}'")
+        transformer = TransformerRegistry.get_transformer(table, method)
+        result = transformer.transform(df)
+        logger.debug(f"Transformed {table}: {result.height} rows, {result.width} cols")
+        return result
+
+    def _get_transform_method(self, table: str) -> str:
+        """Get transform method for a table from data_sources config."""
+        if self.data_sources is None:
+            return "default"
+        return self.data_sources.get_transform_method(table)

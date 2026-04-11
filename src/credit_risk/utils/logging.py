@@ -3,20 +3,18 @@
 import logging
 import sys
 
-from credit_risk.config.settings import LoggingConfig
 
-
-def setup_logging(config: LoggingConfig | None = None) -> logging.Logger:
-    if config is None:
-        config = LoggingConfig()
+def setup_logging(level: str = "INFO", format: str | None = None) -> logging.Logger:
+    if format is None:
+        format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     logger = logging.getLogger("credit_risk")
-    logger.setLevel(getattr(logging, config.level))
+    logger.setLevel(getattr(logging, level))
 
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(getattr(logging, config.level))
-        formatter = logging.Formatter(config.format)
+        handler.setLevel(getattr(logging, level))
+        formatter = logging.Formatter(format)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 

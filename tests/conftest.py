@@ -5,10 +5,9 @@ import pytest
 
 @pytest.fixture
 def sample_config():
-    from credit_risk.config.settings import DataConfig, ModelConfig, Settings
+    from credit_risk.config import Config, ModelConfig
 
-    return Settings(
-        data=DataConfig(),
+    return Config(
         model=ModelConfig(n_estimators=10),
     )
 

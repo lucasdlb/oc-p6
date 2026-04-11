@@ -1,32 +1,26 @@
 """Training script entry point."""
 
 import argparse
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from credit_risk.config.settings import get_settings, load_settings
 from credit_risk.pipeline.training_pipeline import TrainingPipeline
 from credit_risk.utils.logging import setup_logging
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train credit risk model")
-    parser.add_argument("--config", type=str, default=None, help="Path to config YAML")
     parser.add_argument(
         "--experiment", type=str, default="credit_risk", help="MLflow experiment name"
     )
-    args = parser.parse_args()
+    _ = parser.parse_args()
 
-    settings = load_settings(args.config)
-    logger = setup_logging(settings.logging)
+    logger = setup_logging()
     logger.info("Starting training pipeline")
 
-    models_path = get_settings().models_path
+    models_path = Path("models")
     models_path.mkdir(parents=True, exist_ok=True)
 
-    pipeline = TrainingPipeline(settings)
+    pipeline = TrainingPipeline()
     result = pipeline.run()
 
     logger.info(f"Training complete. Metrics: {result['metrics']}")

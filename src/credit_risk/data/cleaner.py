@@ -1,56 +1,55 @@
-"""Data cleaning utilities using Polars."""
+"""Data cleaner composite that delegates to table-specific cleaners."""
 
-import polars as pl
+from __future__ import annotations
+
+import logging
+
 from polars import DataFrame
 
-from credit_risk.config.settings import DataConfig
+from credit_risk.config.experiment_config import DataSourcesConfig
+from credit_risk.config import DataConfig
+from credit_risk.data.cleaning.registry import CleaningRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class DataCleaner:
-    def __init__(self, config: DataConfig | None = None):
-        self.config = config or DataConfig()
+    """Composite cleaner that delegates to table-specific implementations.
 
-    def clean_application(self, df: DataFrame) -> DataFrame:
-        if "DAYS_EMPLOYED" in df.columns:
-            df = df.with_columns(
-                pl.when(pl.col("DAYS_EMPLOYED") == 365243)
-                .then(pl.lit(None))
-                .otherwise(pl.col("DAYS_EMPLOYED"))
-                .alias("DAYS_EMPLOYED")
-            )
+    Usage:
+        cleaner = DataCleaner(data_sources=ds_config)
+        df = cleaner.clean(df, table="application")
+    """
 
-        if "DAYS_LAST_PHONE_CHANGE" in df.columns:
-            df = df.with_columns(
-                pl.when(pl.col("DAYS_LAST_PHONE_CHANGE") == 365243)
-                .then(pl.lit(None))
-                .otherwise(pl.col("DAYS_LAST_PHONE_CHANGE"))
-                .alias("DAYS_LAST_PHONE_CHANGE")
-            )
+    def __init__(
+        self,
+        config: DataConfig | None = None,
+        data_sources: DataSourcesConfig | None = None,
+    ):
+        from credit_risk.config import cfg
 
-        return df
+        self.config = config or cfg.data
+        self.data_sources = data_sources
 
-    def remove_outliers(
-        self, df: DataFrame, column: str, lower: float = 0.01, upper: float = 0.99
-    ) -> DataFrame:
-        quantiles = df.select(pl.col(column).quantile([lower, upper]).alias("q"))
-        lower_val = quantiles[0, "q"]
-        upper_val = quantiles[1, "q"]
-        return df.filter((pl.col(column) >= lower_val) & (pl.col(column) <= upper_val))
+    def clean(self, df: DataFrame, table: str = "application") -> DataFrame:
+        """Clean data for a specific table.
 
-    def fill_missing_numeric(self, df: DataFrame, strategy: str = "median") -> DataFrame:
-        numeric_cols = [
-            c for c in df.columns if df.schema[c] in (pl.Float64, pl.Int64, pl.Float32, pl.Int32)
-        ]
-        for col in numeric_cols:
-            if strategy == "median":
-                median_val = df.select(pl.col(col).median()).item()
-                df = df.with_columns(pl.col(col).fill_null(median_val).alias(col))
-            elif strategy == "mean":
-                mean_val = df.select(pl.col(col).mean()).item()
-                df = df.with_columns(pl.col(col).fill_null(mean_val).alias(col))
-            elif strategy == "zero":
-                df = df.with_columns(pl.col(col).fill_null(0).alias(col))
-        return df
+        Args:
+            df: Input dataframe.
+            table: Table name (e.g., "application", "bureau")
 
-    def clean(self, df: DataFrame) -> DataFrame:
-        return self.clean_application(df)
+        Returns:
+            Cleaned dataframe.
+        """
+        method = self._get_cleaning_method(table)
+        logger.info(f"Cleaning table '{table}' with method '{method}'")
+        cleaner = CleaningRegistry.get_cleaner(table, method)
+        result = cleaner.clean(df)
+        logger.debug(f"Cleaned {table}: {result.height} rows, {result.width} cols")
+        return result
+
+    def _get_cleaning_method(self, table: str) -> str:
+        """Get cleaning method for a table from data_sources config."""
+        if self.data_sources is None:
+            return "default"
+        return self.data_sources.get_cleaning_method(table)

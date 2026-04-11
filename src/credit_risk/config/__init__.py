@@ -1,27 +1,63 @@
 """Configuration package.
 
 Exports:
-  - PROJECT_ROOT: Dynamically resolved project root directory
-  - AppSettings: Paths + env-var config (12-factor)
-  - Settings: ML hyperparams config (YAML-backed)
-  - get_settings(): Cached AppSettings singleton
-  - load_settings(): Load Settings from YAML
+  - cfg: Global Config instance
+  - Config: Pydantic model for config validation
+  - load_config(): Function to load/reload config
+  - ModelGridConfig, REGISTRY, PRESETS, get_configs(), trim_grid(): Grid search registry
 """
 
 from __future__ import annotations
 
-from credit_risk.config.settings import (
-    PROJECT_ROOT,
-    AppSettings,
-    Settings,
-    get_settings,
-    load_settings,
+from credit_risk.config.config import cfg, load_config, reload_config
+from credit_risk.config.models import (
+    AggregationConfig,
+    Config,
+    DataConfig,
+    FeaturesConfig,
+    ImportanceConfig,
+    InterpretConfig,
+    MLFlowConfig,
+    ModelConfig,
+    RunConfig,
+    SearchConfig,
+    SelectionConfig,
+    SplitterConfig,
+    TuningConfig,
+)
+from credit_risk.config.registry import (
+    PRESETS,
+    REGISTRY,
+    ModelGridConfig,
+    get_all_configs,
+    get_configs,
+    trim_grid,
 )
 
 __all__ = [
-    "PROJECT_ROOT",
-    "AppSettings",
-    "Settings",
-    "get_settings",
-    "load_settings",
+    # Global config
+    "cfg",
+    "load_config",
+    "reload_config",
+    # Config models
+    "Config",
+    "RunConfig",
+    "SplitterConfig",
+    "ModelConfig",
+    "SelectionConfig",
+    "ImportanceConfig",
+    "MLFlowConfig",
+    "InterpretConfig",
+    "SearchConfig",
+    "TuningConfig",
+    "DataConfig",
+    "FeaturesConfig",
+    "AggregationConfig",
+    # Registry
+    "REGISTRY",
+    "PRESETS",
+    "ModelGridConfig",
+    "get_configs",
+    "get_all_configs",
+    "trim_grid",
 ]

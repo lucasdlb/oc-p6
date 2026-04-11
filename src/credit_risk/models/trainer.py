@@ -1,11 +1,15 @@
 """Model trainer with MLflow tracking."""
 
+import logging
+
 import mlflow
 import numpy as np
 from lightgbm import LGBMClassifier
 from sklearn.ensemble import RandomForestClassifier
 
 from credit_risk.config.settings import ModelConfig, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class ModelTrainer:
@@ -51,36 +55,44 @@ class ModelTrainer:
         y_val: np.ndarray | None = None,
         experiment_name: str = "credit_risk",
         run_name: str | None = None,
+        enable_mlflow: bool = True,
     ) -> LGBMClassifier | RandomForestClassifier:
-        mlflow.set_experiment(experiment_name)
+        logger.info(f"Training model with {X_train.shape[1]} features, {X_train.shape[0]} samples")
 
-        with mlflow.start_run(run_name=run_name):
-            mlflow.log_params(self.config.model_dump())
+        if enable_mlflow:
+            mlflow.set_experiment(experiment_name)
 
-            model = self._create_model()
-            self._feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
+            with mlflow.start_run(run_name=run_name):
+                mlflow.log_params(self.config.model_dump())
 
-            if X_val is not None and y_val is not None and self.config.model_type == "lightgbm":
-                model.fit(
-                    X_train,
-                    y_train,
-                    eval_set=[(X_val, y_val)],
-                    callbacks=[
-                        lambda env: (
-                            mlflow.log_metrics(
-                                {"val_logloss": env.evaluation_result_list[0][2]},
-                                step=env.iteration,
-                            )
-                            if env.evaluation_result_list
-                            else None
+        model = self._create_model()
+        self._feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
+
+        if X_val is not None and y_val is not None and self.config.model_type == "lightgbm":
+            model.fit(
+                X_train,
+                y_train,
+                eval_set=[(X_val, y_val)],
+                callbacks=[
+                    lambda env: (
+                        mlflow.log_metrics(
+                            {"val_logloss": env.evaluation_result_list[0][2]},
+                            step=env.iteration,
                         )
-                    ],
-                )
-            else:
-                model.fit(X_train, y_train)
+                        if env.evaluation_result_list
+                        else None
+                    )
+                ],
+            )
+        else:
+            model.fit(X_train, y_train)
 
-            self.model = model
-            mlflow.sklearn.log_model(model, "model")
+        self.model = model
+        logger.info("Model training complete")
+
+        if enable_mlflow:
+            with mlflow.start_run(run_name=run_name):
+                mlflow.sklearn.log_model(model, "model")
 
         return model
 
@@ -97,6 +109,7 @@ class ModelTrainer:
             path = str(get_settings().models_path / "model.pkl")
         with open(path, "wb") as f:
             pickle.dump(self.model, f)
+        logger.info(f"Model saved to {path}")
         return path
 
     def load(self, path: str) -> LGBMClassifier | RandomForestClassifier:
@@ -104,4 +117,5 @@ class ModelTrainer:
 
         with open(path, "rb") as f:
             self.model = pickle.load(f)
+        logger.info(f"Model loaded from {path}")
         return self.model

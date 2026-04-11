@@ -1,0 +1,148 @@
+# Data configuration - static project constants
+# Does not change between run modes (debug/dev/prod)
+
+[data]
+data_dir = "data"
+output_dir = "output"
+random_state = 42
+
+[target]
+column = "TARGET"
+id_column = "SK_ID_CURR"
+
+[sources]
+# Data source files (loaded by loader.py)
+application = "data/application_train.csv"
+bureau = "data/bureau.csv"
+bureau_balance = "data/bureau_balance.csv"
+previous_application = "data/previous_application.csv"
+pos_cash = "data/POS_CASH_balance.csv"
+installments = "data/installments_payments.csv"
+credit_card = "data/credit_card_balance.csv"
+
+[data.features]
+# Columns to always drop
+drop_always = ["SK_ID_CURR", "SK_ID_BUREAU", "SK_ID_PREV"]
+
+# Categorical columns for encoding
+categorical = [
+    "NAME_CONTRACT_TYPE",
+    "CODE_GENDER",
+    "FLAG_OWN_CAR",
+    "FLAG_OWN_REALTY",
+    "NAME_INCOME_TYPE",
+    "NAME_EDUCATION_TYPE",
+    "NAME_FAMILY_STATUS",
+    "NAME_HOUSING_TYPE",
+    "WEEKDAY_APPR_PROCESS_START",
+    "FONKAPARTNER_MODE",
+    "EMERGENCYSTATE_MODE",
+    "WALLSMATERIAL_MODE",
+    "HOUSETYPE_MODE",
+]
+
+# EXT_SOURCE columns (highest importance)
+ext_source = ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
+
+# Aggregation features per table
+bureau_agg_features = [
+    "DAYS_CREDIT",
+    "CREDIT_DAY_OVERDUE",
+    "CNT_CREDIT_PROLONG",
+    "AMT_CREDIT_SUM_OVERDUE",
+    "AMT_CREDIT_SUM",
+    "AMT_ANNUITY",
+]
+previous_app_agg_features = [
+    "AMT_ANNUITY",
+    "AMT_APPLICATION",
+    "AMT_CREDIT",
+    "AMT_DOWN_PAYMENT",
+    "DAYS_DECISION",
+    "CNT_PAYMENT",
+]
+installments_agg_features = [
+    "NUM_INSTALMENT_NUMBER",
+    "NUM_INSTALMENT_VERSION",
+    "AMT_INSTALMENT",
+    "AMT_PAYMENT",
+]
+pos_cash_agg_features = [
+    "MONTHS_BALANCE",
+    "CNT_INSTALMENT",
+    "CNT_INSTALMENT_FUTURE",
+    "SK_DPD",
+    "SK_DPD_DEF",
+]
+credit_card_agg_features = [
+    "MONTHS_BALANCE",
+    "AMT_BALANCE",
+    "AMT_CREDIT_LIMIT_ACTUAL",
+    "AMT_DRAWINGS_ATM_CURRENT",
+    "AMT_DRAWINGS_CURRENT",
+    "AMT_PAYMENT_CURRENT",
+    "CNT_INSTALMENT_MATURE_CUM",
+    "SK_DPD",
+    "SK_DPD_DEF",
+]
+bureau_balance_agg_features = ["MONTHS_BALANCE", "STATUS"]
+
+[data.bureau]
+# Bureau aggregation features
+include = true
+features = [
+    "DAYS_CREDIT",
+    "CREDIT_DAY_OVERDUE",
+    "CNT_CREDIT_PROLONG",
+    "AMT_CREDIT_SUM_OVERDUE",
+    "AMT_CREDIT_SUM",
+    "AMT_ANNUITY",
+]
+
+[data.bureau_balance]
+include = true
+features = ["MONTHS_BALANCE", "STATUS"]
+
+[data.previous_application]
+include = true
+features = [
+    "AMT_ANNUITY",
+    "AMT_APPLICATION",
+    "AMT_CREDIT",
+    "AMT_DOWN_PAYMENT",
+    "DAYS_DECISION",
+    "CNT_PAYMENT",
+]
+
+[data.pos_cash]
+include = true
+features = [
+    "MONTHS_BALANCE",
+    "CNT_INSTALMENT",
+    "CNT_INSTALMENT_FUTURE",
+    "SK_DPD",
+    "SK_DPD_DEF",
+]
+
+[data.installments]
+include = true
+features = [
+    "NUM_INSTALMENT_NUMBER",
+    "NUM_INSTALMENT_VERSION",
+    "AMT_INSTALMENT",
+    "AMT_PAYMENT",
+]
+
+[data.credit_card]
+include = true
+features = [
+    "MONTHS_BALANCE",
+    "AMT_BALANCE",
+    "AMT_CREDIT_LIMIT_ACTUAL",
+    "AMT_DRAWINGS_ATM_CURRENT",
+    "AMT_DRAWINGS_CURRENT",
+    "AMT_PAYMENT_CURRENT",
+    "CNT_INSTALMENT_MATURE_CUM",
+    "SK_DPD",
+    "SK_DPD_DEF",
+]
