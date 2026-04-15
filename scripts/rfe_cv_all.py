@@ -141,16 +141,11 @@ for table in TABLES:
     for i, df in enumerate(features_list):
         combined = combined.join(df.lazy(), on="SK_ID_CURR", how="left", suffix=f"_{i}")
 
-    combined = combined.collect()
+combined = combined.collect()
 
-    logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
+logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
 
-    if sample_frac < 1.0:
-        logger.info(f"Sampling {sample_frac * 100}% of combined data")
-        combined = combined.sample(fraction=sample_frac, seed=cfg.run.random_state)
-        logger.info(f"Sampled: {combined.height} rows")
-
-    target_col = cfg.data.target.column
+target_col = cfg.data.target.column
     id_col = cfg.data.target.id_column
 
     non_numeric = [c for c in combined.columns if combined.schema[c] == pl.String]
