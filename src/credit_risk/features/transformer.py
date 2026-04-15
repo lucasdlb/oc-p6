@@ -46,9 +46,10 @@ class DataTransformer:
         """
         method = self._get_transform_method(table)
         logger.info(f"Transforming table '{table}' with method '{method}'")
+        logger.info(f"  Before: {df.height} rows, {df.width} cols")
         transformer = TransformerRegistry.get_transformer(table, method)
         result = transformer.transform(df)
-        logger.debug(f"Transformed {table}: {result.height} rows, {result.width} cols")
+        logger.info(f"  After: {result.height} rows, {result.width} cols")
         return result
 
     def _get_transform_method(self, table: str) -> str:

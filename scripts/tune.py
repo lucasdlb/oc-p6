@@ -26,7 +26,6 @@ from credit_risk.data.imputer import DataImputer
 from credit_risk.data.loader import PLLazyDataLoader
 from credit_risk.features.aggregator import DataAggregator
 from credit_risk.features.transformer import DataTransformer
-from credit_risk.models.cross_validator import LGBMFactory
 from credit_risk.models.metrics import ClassificationRankingMetrics
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.models.tuner import ManyModelOptunaTuner
@@ -41,19 +40,20 @@ logger = logging.getLogger(__name__)
 
 TABLES = [
     "application",
-    # "bureau",
-    # "bureau_balance",
-    # "previous_application",
-    # "pos_cash_balance",
-    # "credit_card_balance",
-    # "installments_payments",
+    "bureau",
+    "bureau_balance",
+    "previous_application",
+    "pos_cash_balance",
+    "credit_card_balance",
+    "installments_payments",
 ]
 
+USE_SELECTED_FEATURES = True  # Set to False to use all features
 run_mode = cfg.run.mode
 logger.info(f"Running tuning in mode: {run_mode}")
 
 if cfg.mlflow.enabled:
-    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
     mlflow.set_experiment(cfg.mlflow.experiment_name)
     if mlflow.active_run():
         mlflow.end_run()
@@ -103,13 +103,9 @@ for table in TABLES:
     df = cleaner.clean(df, table)
     df = imputer.impute(df, table)
 
-    logger.info(f"  Cleaned: {df.height} rows")
-
     df = aggregator.aggregate(df.lazy(), table, method="detailed").collect()
-    logger.info(f"  Aggregated: {df.height} rows, {df.width} cols")
 
     df = transformer.transform(df, table=table)
-    logger.info(f"  Transformed: {df.height} rows, {df.width} cols")
 
     id_cols = [c for c in df.columns if c.startswith("SK_ID")]
     feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]
@@ -140,7 +136,26 @@ if non_numeric:
     combined = encoder.fit_transform(combined)
     logger.info(f"Encoded: {combined.height} rows, {combined.width} cols")
 
-feature_cols = [c for c in combined.columns if c not in [target_col, id_col]]
+if USE_SELECTED_FEATURES:
+    from credit_risk.features.store import FeatureStore
+
+    store = FeatureStore(root=cfg.output.features_path)
+    all_selected = []
+    for table in TABLES:
+        feature_name = f"{table}_{run_mode}"
+        try:
+            features = store.load(feature_name)
+            all_selected.extend(features)
+            logger.info(f"Loaded {len(features)} features from {feature_name}")
+        except KeyError:
+            logger.warning(f"No saved features for {feature_name}, using all")
+    all_selected = list(set(all_selected))  # Deduplicate
+    available_cols = set(combined.columns) - {target_col, id_col}
+    feature_cols = [c for c in all_selected if c in available_cols]
+    logger.info(f"Using {len(feature_cols)} selected features")
+else:
+    feature_cols = [c for c in combined.columns if c not in [target_col, id_col]]
+    logger.info(f"Using {len(feature_cols)} all features")
 
 X = combined.select(feature_cols).to_pandas()
 y = combined.select(target_col).to_numpy().ravel()
@@ -168,6 +183,7 @@ if cfg.mlflow.enabled:
     mlflow.log_dict(cfg.model_dump(), "config.json")
     for model_name, result in all_results.items():
         mlflow.log_metric(f"{model_name}_roc_auc", result["best_value"])
+    # Log actual tuned params from tuner results
     mlflow.log_params(all_results[best_model_name]["best_params"])
     mlflow.log_metric("best_roc_auc", all_results[best_model_name]["best_value"])
     mlflow.log_param("best_model", best_model_name)

@@ -48,8 +48,7 @@ class ApplicationTransformer(TableTransformer):
             new_cols += [
                 # Simple mean — top-5 feature in most published solutions
                 (
-                    (pl.col("EXT_SOURCE_1") + pl.col("EXT_SOURCE_2") + pl.col("EXT_SOURCE_3"))
-                    / 3
+                    (pl.col("EXT_SOURCE_1") + pl.col("EXT_SOURCE_2") + pl.col("EXT_SOURCE_3")) / 3
                 ).alias("ext_source_mean"),
                 # Weighted mean (source 2 & 3 tend to be stronger)
                 (
@@ -69,11 +68,9 @@ class ApplicationTransformer(TableTransformer):
                 .sqrt()
                 .alias("ext_source_std"),
                 # Product — captures joint low-score risk
-                (
-                    pl.col("EXT_SOURCE_1")
-                    * pl.col("EXT_SOURCE_2")
-                    * pl.col("EXT_SOURCE_3")
-                ).alias("ext_source_product"),
+                (pl.col("EXT_SOURCE_1") * pl.col("EXT_SOURCE_2") * pl.col("EXT_SOURCE_3")).alias(
+                    "ext_source_product"
+                ),
                 # Min score — worst external rating
                 pl.min_horizontal("EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3").alias(
                     "ext_source_min"
@@ -81,23 +78,17 @@ class ApplicationTransformer(TableTransformer):
             ]
 
         if has_ext[2] and has_ext[3]:
-            new_cols.append(
-                (pl.col("EXT_SOURCE_2") * pl.col("EXT_SOURCE_3")).alias("ext_2_x_3")
-            )
+            new_cols.append((pl.col("EXT_SOURCE_2") * pl.col("EXT_SOURCE_3")).alias("ext_2_x_3"))
 
         # EXT_SOURCE vs credit amount: good score but large loan = stressed
         if has_ext[2] and "AMT_CREDIT" in cols:
             new_cols.append(
-                (pl.col("AMT_CREDIT") / (pl.col("EXT_SOURCE_2") + 1e-5)).alias(
-                    "credit_per_ext2"
-                )
+                (pl.col("AMT_CREDIT") / (pl.col("EXT_SOURCE_2") + 1e-5)).alias("credit_per_ext2")
             )
 
         if has_ext[3] and "AMT_CREDIT" in cols:
             new_cols.append(
-                (pl.col("AMT_CREDIT") / (pl.col("EXT_SOURCE_3") + 1e-5)).alias(
-                    "credit_per_ext3"
-                )
+                (pl.col("AMT_CREDIT") / (pl.col("EXT_SOURCE_3") + 1e-5)).alias("credit_per_ext3")
             )
 
         # ------------------------------------------------------------------ #
@@ -110,24 +101,25 @@ class ApplicationTransformer(TableTransformer):
         if "DAYS_BIRTH" in cols and "YEARS_EMPLOYED" in cols:
             # Fraction of life spent employed — stability proxy
             new_cols.append(
-                (pl.col("YEARS_EMPLOYED").abs() / (pl.col("DAYS_BIRTH").abs() + 1))
-                .alias("employed_to_age_ratio")
+                (pl.col("YEARS_EMPLOYED").abs() / (pl.col("DAYS_BIRTH").abs() + 1)).alias(
+                    "employed_to_age_ratio"
+                )
             )
 
         if "YEARS_EMPLOYED" in cols and "AMT_INCOME_TOTAL" in cols:
             # Income per year of employment — high income but short tenure = risk
             new_cols.append(
-                (pl.col("AMT_INCOME_TOTAL") / (pl.col("YEARS_EMPLOYED").abs() / 365.25 + 1))
-                .alias("income_per_employed_year")
+                (pl.col("AMT_INCOME_TOTAL") / (pl.col("YEARS_EMPLOYED").abs() / 365.25 + 1)).alias(
+                    "income_per_employed_year"
+                )
             )
 
         if "DAYS_REGISTRATION" in cols and "DAYS_BIRTH" in cols:
             # How old was the client when they registered? Late registration = instability
             new_cols.append(
-                (
-                    (pl.col("DAYS_BIRTH") - pl.col("DAYS_REGISTRATION")).abs()
-                    / 365.25
-                ).alias("age_at_registration")
+                ((pl.col("DAYS_BIRTH") - pl.col("DAYS_REGISTRATION")).abs() / 365.25).alias(
+                    "age_at_registration"
+                )
             )
 
         if "DAYS_ID_PUBLISH" in cols and "DAYS_BIRTH" in cols:
@@ -154,9 +146,7 @@ class ApplicationTransformer(TableTransformer):
                     "annuity_to_income_ratio"
                 ),
                 # Disposable income after annuity payments
-                (pl.col("AMT_INCOME_TOTAL") - pl.col("AMT_ANNUITY")).alias(
-                    "disposable_income"
-                ),
+                (pl.col("AMT_INCOME_TOTAL") - pl.col("AMT_ANNUITY")).alias("disposable_income"),
                 # Monthly income vs monthly annuity stress
                 (pl.col("AMT_ANNUITY") / (pl.col("AMT_INCOME_TOTAL") / 12 + 1)).alias(
                     "annuity_to_monthly_income"
@@ -229,9 +219,7 @@ class ApplicationTransformer(TableTransformer):
         contact_cols = [c for c in cols if c.startswith("FLAG_") and "CONTACT" in c]
         if contact_cols:
             new_cols.append(
-                pl.sum_horizontal(*[pl.col(c) for c in contact_cols]).alias(
-                    "total_contact_flags"
-                )
+                pl.sum_horizontal(*[pl.col(c) for c in contact_cols]).alias("total_contact_flags")
             )
 
         # Region risk — high population relative = urban, different risk profile
@@ -245,9 +233,9 @@ class ApplicationTransformer(TableTransformer):
         if "REGION_RATING_CLIENT" in cols and "REGION_RATING_CLIENT_W_CITY" in cols:
             # Disagreement between region ratings = inconsistency signal
             new_cols.append(
-                (
-                    pl.col("REGION_RATING_CLIENT") - pl.col("REGION_RATING_CLIENT_W_CITY")
-                ).alias("region_rating_mismatch")
+                (pl.col("REGION_RATING_CLIENT") - pl.col("REGION_RATING_CLIENT_W_CITY")).alias(
+                    "region_rating_mismatch"
+                )
             )
 
         # ------------------------------------------------------------------ #
@@ -272,9 +260,7 @@ class ApplicationTransformer(TableTransformer):
 
             if "AMT_CREDIT" in cols:
                 new_cols.append(
-                    (pl.col("AMT_CREDIT") / (age_years + 1)).alias(
-                        "credit_per_age_year"
-                    )
+                    (pl.col("AMT_CREDIT") / (age_years + 1)).alias("credit_per_age_year")
                 )
 
         # ------------------------------------------------------------------ #
@@ -283,10 +269,7 @@ class ApplicationTransformer(TableTransformer):
         if "FLAG_OWN_CAR" in cols and "AMT_INCOME_TOTAL" in cols:
             new_cols.append(
                 (
-                    pl.when(pl.col("FLAG_OWN_CAR") == "Y")
-                    .then(1)
-                    .otherwise(0)
-                    .cast(pl.Float64)
+                    pl.when(pl.col("FLAG_OWN_CAR") == "Y").then(1).otherwise(0).cast(pl.Float64)
                     * pl.col("AMT_INCOME_TOTAL")
                 ).alias("car_owner_income")
             )
@@ -302,9 +285,7 @@ class ApplicationTransformer(TableTransformer):
         # OWN_CAR_AGE: older car + large loan = stretched finances
         if "OWN_CAR_AGE" in cols and "AMT_CREDIT" in cols:
             new_cols.append(
-                (pl.col("OWN_CAR_AGE") * pl.col("AMT_CREDIT")).alias(
-                    "car_age_x_credit"
-                )
+                (pl.col("OWN_CAR_AGE") * pl.col("AMT_CREDIT")).alias("car_age_x_credit")
             )
 
         # ------------------------------------------------------------------ #
@@ -319,10 +300,12 @@ class ApplicationTransformer(TableTransformer):
             "DAYS_ID_PUBLISH": "id_renewal_rate",
         }
 
-        df = df.drop([
-            raw
-            for raw, derived in _DERIVE_AND_DROP.items()
-            if raw in df.columns and derived in df.columns  # only drop if derivation succeeded
-        ])
+        df = df.drop(
+            [
+                raw
+                for raw, derived in _DERIVE_AND_DROP.items()
+                if raw in df.columns and derived in df.columns  # only drop if derivation succeeded
+            ]
+        )
 
         return df

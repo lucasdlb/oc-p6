@@ -12,11 +12,17 @@ n_splits = 3
 random_state = 42
 
 [model]
-max_depth = 4
-n_estimators = 200
-learning_rate = 0.05
-num_leaves = 31
-min_child_samples = 20
+max_depth = 13
+n_estimators = 1628
+learning_rate = 0.010693009871179241
+num_leaves = 37
+min_child_samples = 115
+feature_fraction = 0.60506512796031
+bagging_fraction = 0.8773772642676346
+bagging_freq = 4
+lambda_l1 = 4.038571041629981
+lambda_l2 = 6.735227145532746e-06
+min_split_gain = 0.251499469339536
 subsample = 0.8
 colsample_bytree = 0.8
 reg_alpha = 0.1
@@ -54,3 +60,11 @@ models = [
     "hist_gbm",
 #    "lr"
 ]
+
+
+[resampling]
+enabled = false
+method = "smote"
+sampling_strategy = "minority"
+k_neighbors = 5
+random_state = 42

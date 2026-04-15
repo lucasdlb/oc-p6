@@ -84,13 +84,13 @@ ImportanceClass = get_importance_class(cfg.importance.method)
 importance_strategy = ImportanceClass()
 
 if cfg.mlflow.enabled:
-    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
     mlflow.set_experiment(table_config["experiment"])
 
     if mlflow.active_run():
         mlflow.end_run()
 
-    run_name = f"{run_mode}_{args.table}_depth_{cfg.model.max_depth}"
+    run_name = f"{run_mode}_{args.table}"
     mlflow.start_run(run_name=run_name)
     mlflow.log_params({"run_mode": run_mode, "table": args.table})
     mlflow.log_params(cfg.model.model_dump())
@@ -114,16 +114,9 @@ aggregator = DataAggregator()
 transformer = DataTransformer()
 
 df = cleaner.clean(df, args.table)
-logger.info(f"After cleaning: {df.height} rows, {df.width} cols")
-
 df = imputer.impute(df, args.table)
-logger.info(f"After impute: {df.height} rows, {df.width} cols")
-
 df = aggregator.aggregate(df.lazy(), args.table, method="detailed").collect()
-logger.info(f"Aggregated: {df.height} rows, {df.width} cols")
-
 df = transformer.transform(df, table=args.table)
-logger.info(f"Transformed: {df.height} rows, {df.width} cols")
 
 if table_config.get("has_encoding"):
     encoder = CategoricalEncoder()
@@ -220,7 +213,7 @@ if cfg.mlflow.enabled:
         }
     )
 
-feature_store = FeatureStore()
+feature_store = FeatureStore(root=cfg.output.features_path)
 feature_store.save(
     name=f"{args.table}_{run_mode}",
     features=best_features,

@@ -24,8 +24,9 @@ class PreviousApplicationTransformer(TableTransformer):
         # --- credit fulfilment: how much of what was requested was granted ---
         if has("prev_AMT_CREDIT_mean", "prev_AMT_APPLICATION_mean"):
             new_cols.append(
-                (pl.col("prev_AMT_CREDIT_mean") / (pl.col("prev_AMT_APPLICATION_mean") + 1))
-                .alias("prev_credit_fulfilment_rate")
+                (pl.col("prev_AMT_CREDIT_mean") / (pl.col("prev_AMT_APPLICATION_mean") + 1)).alias(
+                    "prev_credit_fulfilment_rate"
+                )
                 # < 1: consistently granted less than requested — lender caution signal
                 # > 1: granted more than requested — upsell, lower risk signal
             )
@@ -33,22 +34,25 @@ class PreviousApplicationTransformer(TableTransformer):
         # --- annuity burden on previous loans ---
         if has("prev_AMT_ANNUITY_mean", "prev_AMT_CREDIT_mean"):
             new_cols.append(
-                (pl.col("prev_AMT_ANNUITY_mean") / (pl.col("prev_AMT_CREDIT_mean") + 1))
-                .alias("prev_annuity_to_credit_ratio")
+                (pl.col("prev_AMT_ANNUITY_mean") / (pl.col("prev_AMT_CREDIT_mean") + 1)).alias(
+                    "prev_annuity_to_credit_ratio"
+                )
             )
 
         # --- down payment commitment rate ---
         if has("prev_AMT_DOWN_PAYMENT_mean", "prev_AMT_APPLICATION_mean"):
             new_cols.append(
-                (pl.col("prev_AMT_DOWN_PAYMENT_mean") / (pl.col("prev_AMT_APPLICATION_mean") + 1))
-                .alias("prev_down_payment_rate")
+                (
+                    pl.col("prev_AMT_DOWN_PAYMENT_mean") / (pl.col("prev_AMT_APPLICATION_mean") + 1)
+                ).alias("prev_down_payment_rate")
             )
 
         # --- refusal pressure: refused amount relative to approved ---
         if has("prev_refused_amt_sum", "prev_AMT_CREDIT_sum"):
             new_cols.append(
-                (pl.col("prev_refused_amt_sum") / (pl.col("prev_AMT_CREDIT_sum") + 1))
-                .alias("prev_refused_to_approved_amt_ratio")
+                (pl.col("prev_refused_amt_sum") / (pl.col("prev_AMT_CREDIT_sum") + 1)).alias(
+                    "prev_refused_to_approved_amt_ratio"
+                )
                 # high ratio = a lot of credit was refused relative to what was granted
             )
 
@@ -58,23 +62,26 @@ class PreviousApplicationTransformer(TableTransformer):
                 pl.col("prev_DAYS_DECISION_max") - pl.col("prev_DAYS_DECISION_min")
             ).abs() + 1
             new_cols.append(
-                (pl.col("prev_n_records") / credit_history_span * 365)
-                .alias("prev_applications_per_year")
+                (pl.col("prev_n_records") / credit_history_span * 365).alias(
+                    "prev_applications_per_year"
+                )
                 # high = serial applicant — can signal financial stress
             )
 
         # --- recent refusal pressure ---
         if has("prev_refused_count_1y", "prev_n_applications_1y"):
             new_cols.append(
-                (pl.col("prev_refused_count_1y") / (pl.col("prev_n_applications_1y") + 1))
-                .alias("prev_refusal_rate_1y")
+                (pl.col("prev_refused_count_1y") / (pl.col("prev_n_applications_1y") + 1)).alias(
+                    "prev_refusal_rate_1y"
+                )
             )
 
         # --- approved credit trend: recent vs historical ---
         if has("prev_amt_credit_mean_1y", "prev_AMT_CREDIT_mean"):
             new_cols.append(
-                (pl.col("prev_amt_credit_mean_1y") / (pl.col("prev_AMT_CREDIT_mean") + 1))
-                .alias("prev_credit_recency_ratio")
+                (pl.col("prev_amt_credit_mean_1y") / (pl.col("prev_AMT_CREDIT_mean") + 1)).alias(
+                    "prev_credit_recency_ratio"
+                )
                 # > 1: applying for more recently — increasing financial need signal
             )
 

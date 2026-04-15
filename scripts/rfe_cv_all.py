@@ -49,12 +49,12 @@ logger = logging.getLogger(__name__)
 
 TABLES = [
     "application",
-    # "bureau",
-    # "bureau_balance",
-    # "previous_application",
-    # "pos_cash_balance",
-    # "credit_card_balance",
-    # "installments_payments",
+    "bureau",
+    "bureau_balance",
+    "previous_application",
+    "pos_cash_balance",
+    "credit_card_balance",
+    "installments_payments",
 ]
 
 
@@ -88,7 +88,7 @@ def main():
 
         mlflow_active = mlflow
 
-        mlflow.set_tracking_uri("sqlite:///mlflow.db")
+        mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
         mlflow.set_experiment(cfg.mlflow.experiment_name)
 
         if mlflow.active_run():
@@ -129,14 +129,8 @@ def main():
 
         df = cleaner.clean(df, table)
         df = imputer.impute(df, table)
-
-        logger.info(f"  Cleaned: {df.height} rows")
-
         df = aggregator.aggregate(df.lazy(), table, method="detailed").collect()
-        logger.info(f"  Aggregated: {df.height} rows, {df.width} cols")
-
         df = transformer.transform(df, table=table)
-        logger.info(f"  Transformed: {df.height} rows, {df.width} cols")
 
         id_cols = [c for c in df.columns if c.startswith("SK_ID")]
         feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]
@@ -240,7 +234,7 @@ def main():
             }
         )
 
-    feature_store = FeatureStore()
+    feature_store = FeatureStore(root=cfg.output.features_path)
     feature_store.save(
         name=f"all_tables_{run_mode}",
         features=best_features,

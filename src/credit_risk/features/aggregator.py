@@ -49,6 +49,8 @@ class DataAggregator:
         logger.info(f"Aggregating table '{table}' with method '{method}'")
         agg = AggregatorRegistry.get_aggregator(table)
         result = agg.aggregate(df, method)
+        collected = result.collect()
+        logger.info(f"  Aggregated: {collected.height} rows, {collected.width} cols")
         return result
 
     def _get_aggregation_method(self, table: str) -> str:

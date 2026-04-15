@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+def _find_project_root() -> Path:
+    """Find project root by looking for pyproject.toml."""
+    current = Path(__file__).resolve()
+    for parent in [current] + list(current.parents):
+        if (parent / "pyproject.toml").exists():
+            return parent
+    return current.parent.parent.parent
+
+
+PROJECT_ROOT = _find_project_root()
 
 
 class RunConfig(BaseModel):
@@ -85,6 +99,36 @@ class TuningConfig(BaseModel):
     n_jobs: int = Field(default=1, ge=1)
     pruner: Literal["median", "hyperband", "none"] = "none"
     models: list[str] = Field(default_factory=lambda: ["lgbm"])
+
+
+class ResamplingConfig(BaseModel):
+    """Resampling configuration for handling imbalanced data."""
+
+    enabled: bool = False
+    method: Literal["smote", "over", "under", "none"] | float = "smote"
+    sampling_strategy: str | float = "minority"
+    k_neighbors: int = 5
+    random_state: int = 42
+
+
+class OutputConfig(BaseModel):
+    """Output paths for artifacts, models, mlflow."""
+
+    models_dir: str = "models"
+    features_dir: str = "artifacts/features"
+    mlflow_db: str = "mlflow.db"
+
+    @property
+    def models_path(self) -> Path:
+        return PROJECT_ROOT / self.models_dir
+
+    @property
+    def features_path(self) -> Path:
+        return PROJECT_ROOT / self.features_dir
+
+    @property
+    def mlflow_db_path(self) -> Path:
+        return PROJECT_ROOT / self.mlflow_db
 
 
 # -----------------------------------------------------------------------------
@@ -171,7 +215,9 @@ class Config(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     interpret: InterpretConfig = Field(default_factory=InterpretConfig)
     tuning: TuningConfig = Field(default_factory=TuningConfig)
+    resampling: ResamplingConfig = Field(default_factory=ResamplingConfig)
     data: DataConfig = Field(default_factory=DataConfig)
+    output: OutputConfig = Field(default_factory=OutputConfig)
 
     @model_validator(mode="after")
     def validate_search_preset(self) -> "Config":

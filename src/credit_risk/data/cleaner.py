@@ -6,8 +6,8 @@ import logging
 
 from polars import DataFrame
 
-from credit_risk.config.experiment_config import DataSourcesConfig
 from credit_risk.config import DataConfig
+from credit_risk.config.experiment_config import DataSourcesConfig
 from credit_risk.data.cleaning.registry import CleaningRegistry
 
 logger = logging.getLogger(__name__)
@@ -43,9 +43,10 @@ class DataCleaner:
         """
         method = self._get_cleaning_method(table)
         logger.info(f"Cleaning table '{table}' with method '{method}'")
+        logger.info(f"  Before: {df.height} rows, {df.width} cols")
         cleaner = CleaningRegistry.get_cleaner(table, method)
         result = cleaner.clean(df)
-        logger.debug(f"Cleaned {table}: {result.height} rows, {result.width} cols")
+        logger.info(f"  After: {result.height} rows, {result.width} cols")
         return result
 
     def _get_cleaning_method(self, table: str) -> str:

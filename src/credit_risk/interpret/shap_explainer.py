@@ -21,7 +21,7 @@ class ShapExplainer:
         background = shap.sample(
             X_background, self.config.interpret.shap_background_samples, random_state=42
         )
-        self.explainer = shap.Explainer(model.predict_proba, background, random_state=42)  # type: ignore[attr-defined]
+        self.explainer = shap.TreeExplainer(model, data=background)
         return self
 
     def global_importance(
@@ -31,9 +31,9 @@ class ShapExplainer:
             raise ValueError("Explainer not fitted. Call fit() first.")
         n = n_samples or self.config.interpret.shap_n_samples
         X_sample = shap.sample(X, min(n, X.shape[0]), random_state=42)
-        shap_values = self.explainer(X_sample)
-        mean_abs = np.abs(shap_values.values).mean(axis=0)  # type: ignore[attr-defined]
-        return shap_values.values, mean_abs  # type: ignore[attr-defined]
+        shap_values = self.explainer.shap_values(X_sample, check_additivity=False)
+        mean_abs = np.abs(shap_values).mean(axis=0)
+        return shap_values, mean_abs
 
     def local_importance(
         self, X_instance: np.ndarray, n_samples: int | None = None
@@ -42,15 +42,21 @@ class ShapExplainer:
             raise ValueError("Explainer not fitted. Call fit() first.")
         n = n_samples or self.config.interpret.shap_n_samples
         X_sample = shap.sample(X_instance, min(n, X_instance.shape[0]), random_state=42)
-        shap_values = self.explainer(X_sample)
-        return shap_values.values, shap_values.base_values  # type: ignore[attr-defined]
+        shap_values = self.explainer.shap_values(X_sample)
+        base_value = self.explainer.expected_value
+        if hasattr(base_value, "__len__"):
+            base_value = np.array(base_value)
+        else:
+            base_value = np.array([base_value])
+        return shap_values, base_value
 
     def feature_contributions(
         self, X_instance: np.ndarray, top_k: int = 10
     ) -> list[tuple[int, float]]:
         if self.explainer is None:
             raise ValueError("Explainer not fitted. Call fit() first.")
-        shap_values = self.explainer(X_instance)
-        contributions = shap_values.values[0]  # type: ignore[attr-defined]
+        X_single = X_instance[:1]
+        shap_values = self.explainer.shap_values(X_single)
+        contributions = shap_values[0]
         ranked = sorted(enumerate(contributions), key=lambda x: abs(x[1]), reverse=True)
         return ranked[:top_k]
