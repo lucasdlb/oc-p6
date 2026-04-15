@@ -110,7 +110,7 @@ def main():
 loader = PLLazyDataLoader()
 labels = loader.load_labels()
 if sample_frac < 1.0:
-    labels = labels.sample(fraction=sample_frac)
+    labels = labels.collect().sample(fraction=sample_frac).lazy()
 
 cleaner = DataCleaner()
     imputer = DataImputer()

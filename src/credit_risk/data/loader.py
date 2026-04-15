@@ -163,26 +163,6 @@ class BaseDataLoader(ABC):
         """Load SK_ID_CURR and TARGET columns as lazy frame."""
         return self.load("application").select(["SK_ID_CURR", "TARGET"]).lazy()
 
-    def load_by_labels(
-        self, name: str, labels: pl.LazyFrame, sample_fraction: float = 1.0
-    ) -> pl.LazyFrame:
-        """Load a table filtered by label IDs.
-
-        Usage:
-            labels = loader.load_labels()
-            if sample_fraction < 1.0:
-                labels = labels.sample(fraction=sample_fraction)
-            df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
-        """
-        if sample_fraction < 1.0:
-            labels = labels.sample(fraction=sample_fraction)
-
-        app_ids = labels.select("SK_ID_CURR")
-        data = self.load(table).lazy()
-        return data.join(app_ids, on="SK_ID_CURR", how="inner")
-        return data.join(app_ids, on="SK_ID_CURR", how="inner")
-
-
 class PLDataLoader(BaseDataLoader):
     """Polars eager data loader."""
 

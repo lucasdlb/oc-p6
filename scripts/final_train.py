@@ -70,9 +70,10 @@ if sample_frac < 1.0:
 
 logger.info("Loading data...")
 loader = PLLazyDataLoader()
-labels = loader.load_labels()
 if sample_frac < 1.0:
-    labels = labels.sample(fraction=sample_frac)
+    labels = loader.load_labels().collect().sample(fraction=sample_frac).lazy()
+else:
+    labels = loader.load_labels()
 
 cleaner = DataCleaner()
 imputer = DataImputer()

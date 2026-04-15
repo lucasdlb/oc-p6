@@ -7,7 +7,6 @@ import logging
 from polars import DataFrame
 
 from credit_risk.config import DataConfig
-from credit_risk.config.experiment_config import DataSourcesConfig
 from credit_risk.data.cleaning.registry import CleaningRegistry
 
 logger = logging.getLogger(__name__)
