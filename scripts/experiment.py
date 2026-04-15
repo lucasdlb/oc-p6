@@ -36,32 +36,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TABLE_CONFIGS = {
-    "application": {"experiment": "application_cv", "has_encoding": True},
-    "bureau": {"experiment": "bureau_cv"},
-    "bureau_balance": {"experiment": "bureau_balance_cv"},
-    "previous_application": {"experiment": "previous_application_cv"},
-    "pos_cash_balance": {"experiment": "pos_cash_balance_cv"},
-    "credit_card_balance": {"experiment": "credit_card_balance_cv"},
-    "installments_payments": {"experiment": "installments_payments_cv"},
-}
-
 parser = argparse.ArgumentParser(description="Run CV experiment on a single table")
-parser.add_argument("--table", type=str, default="application", choices=list(TABLE_CONFIGS.keys()))
+parser.add_argument("--table", type=str, default="application")
 args = parser.parse_args()
 
 table = args.table
-table_config = TABLE_CONFIGS[table]
+experiment_name = f"{table}_cv"
 run_mode = cfg.run.mode
 logger.info(f"Running experiment on table: {table}, mode: {run_mode}")
 
 if cfg.mlflow.enabled:
     mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
-    mlflow.set_experiment(table_config["experiment"])
-    if mlflow.active_run():
-        mlflow.end_run()
-    mlflow.start_run(run_name=f"{run_mode}_{table}_cv")
-    mlflow.log_params({"run_mode": run_mode, "table": table})
+    mlflow.set_experiment(experiment_name)
     mlflow.log_dict(cfg.model_dump(), "config.json")
 
 sample_frac = cfg.run.sample_fraction
@@ -88,7 +74,8 @@ df = imputer.impute(df, table, method=cfg.processing.imputation)
 df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
 df = transformer.transform(df, table=table)
 
-if table_config.get("has_encoding") and cfg.processing.encoding != "none":
+# Encoding only for application (main table)
+if table == "application" and cfg.processing.encoding != "none":
     encoder = PolarsOneHotEncoder(max_categories=20)
     df = encoder.fit_transform(df)
     logger.info(f"Encoded: {df.height} rows, {df.width} cols")

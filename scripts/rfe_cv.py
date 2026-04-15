@@ -46,21 +46,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TABLE_CONFIGS = {
-    "application": {"experiment": "application_rfe_cv", "has_encoding": True},
-    "bureau": {"experiment": "bureau_rfe_cv"},
-    "bureau_balance": {"experiment": "bureau_balance_rfe_cv"},
-    "previous_application": {"experiment": "previous_application_rfe_cv"},
-    "pos_cash_balance": {"experiment": "pos_cash_balance_rfe_cv"},
-    "credit_card_balance": {"experiment": "credit_card_balance_rfe_cv"},
-    "installments_payments": {"experiment": "installments_payments_rfe_cv"},
-}
-
 parser = argparse.ArgumentParser(description="RFE-CV feature selection")
-parser.add_argument("--table", type=str, choices=list(TABLE_CONFIGS.keys()), default="application")
+parser.add_argument("--table", type=str, default="application")
 args = parser.parse_args()
 
-table_config = TABLE_CONFIGS[args.table]
+table = args.table
+experiment_name = f"{table}_rfe_cv"
 run_mode = cfg.run.mode
 logger.info(f"Running in mode: {run_mode}, table: {args.table}")
 
@@ -85,7 +76,7 @@ importance_strategy = ImportanceClass()
 
 if cfg.mlflow.enabled:
     mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
-    mlflow.set_experiment(table_config["experiment"])
+    mlflow.set_experiment(experiment_name)
 
     if mlflow.active_run():
         mlflow.end_run()
@@ -113,12 +104,13 @@ imputer = DataImputer()
 aggregator = DataAggregator()
 transformer = DataTransformer()
 
-df = cleaner.clean(df, args.table, method=cfg.processing.cleaning)
-df = imputer.impute(df, args.table, method=cfg.processing.imputation)
-df = aggregator.aggregate(df.lazy(), args.table, method=cfg.processing.aggregation).collect()
-df = transformer.transform(df, table=args.table)
+df = cleaner.clean(df, table, method=cfg.processing.cleaning)
+df = imputer.impute(df, table, method=cfg.processing.imputation)
+df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
+df = transformer.transform(df, table=table)
 
-if table_config.get("has_encoding"):
+# Encoding only for application (main table)
+if table == "application" and cfg.processing.encoding != "none":
     encoder = CategoricalEncoder()
     df = encoder.fit_transform(df)
     logger.info(f"Encoded: {df.height} rows, {df.width} cols")
