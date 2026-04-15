@@ -90,8 +90,7 @@ df = imputer.impute(df, table, method=cfg.processing.imputation)
 df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
 df = transformer.transform(df, table=table)
 
-if table_config.get("has_encoding"):
-    # encoder = CategoricalEncoder()
+if table_config.get("has_encoding") and cfg.processing.encoding != "none":
     encoder = PolarsOneHotEncoder(max_categories=20)
     df = encoder.fit_transform(df)
     logger.info(f"Encoded: {df.height} rows, {df.width} cols")

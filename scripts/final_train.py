@@ -111,7 +111,7 @@ for table in TABLES:
     df = cleaner.clean(df, table, method=cfg.processing.cleaning)
     df = imputer.impute(df, table, method=cfg.processing.imputation)
     df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
-    df = transformer.transform(df, table=table)
+    df = transformer.transform(df, table=table, method=cfg.processing.encoding)
 
     id_cols = [c for c in df.columns if c.startswith("SK_ID")]
     feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]
@@ -141,7 +141,7 @@ target_col = cfg.data.target.column
 id_col = cfg.data.target.id_column
 
 non_numeric = [c for c in combined.columns if combined.schema[c] == pl.String]
-if non_numeric:
+if non_numeric and cfg.processing.encoding != "none":
     logger.info(f"Encoding {len(non_numeric)} categorical columns")
     encoder = CategoricalEncoder()
     combined = encoder.fit_transform(combined)

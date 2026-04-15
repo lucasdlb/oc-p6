@@ -33,17 +33,20 @@ class DataTransformer:
         self.config = config or cfg.data.features
         self.data_sources = data_sources
 
-    def transform(self, df: DataFrame, table: str = "application") -> DataFrame:
+    def transform(
+        self, df: DataFrame, table: str = "application", method: str | None = None
+    ) -> DataFrame:
         """Transform features for a specific table.
 
         Args:
             df: Input dataframe
             table: Table name (e.g., "bureau", "bureau_balance")
+            method: Transform method (default from config)
 
         Returns:
             Transformed dataframe with engineered features
         """
-        method = self._get_transform_method(table)
+        method = method or self._get_transform_method(table)
         logger.info(f"Transforming table '{table}' with method '{method}'")
         logger.info(f"  Before: {df.height} rows, {df.width} cols")
         transformer = TransformerRegistry.get_transformer(table, method)
