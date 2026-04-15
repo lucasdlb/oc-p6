@@ -82,18 +82,10 @@ transformer = DataTransformer()
 
 store = FeatureStore(root=cfg.output.features_path)
 
-all_selected = []
-for table in TABLES:
-    feature_name = f"{table}_{run_mode}"
-    features = store.load_or_empty(feature_name)
-    if features:
-        all_selected.extend(features)
-        logger.info(f"Loaded {len(features)} features from {feature_name}")
-    else:
-        logger.warning(f"No saved features for {feature_name}")
-
-all_selected = list(set(all_selected))
+all_selected, saved_records = store.load_tables(TABLES, suffix=f"_{run_mode}")
 logger.info(f"Total selected features: {len(all_selected)}")
+for table, features in saved_records.items():
+    logger.info(f"  {table}: {len(features)} features")
 
 features_list = []
 for table in TABLES:

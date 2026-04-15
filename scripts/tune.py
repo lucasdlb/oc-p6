@@ -140,15 +140,7 @@ if USE_SELECTED_FEATURES:
     from credit_risk.features.store import FeatureStore
 
     store = FeatureStore(root=cfg.output.features_path)
-    all_selected = []
-    for table in TABLES:
-        feature_name = f"{table}_{run_mode}"
-        try:
-            features = store.load(feature_name)
-            all_selected.extend(features)
-            logger.info(f"Loaded {len(features)} features from {feature_name}")
-        except KeyError:
-            logger.warning(f"No saved features for {feature_name}, using all")
+    all_selected, _ = store.load_tables(TABLES, suffix=f"_{run_mode}")
     all_selected = list(set(all_selected))  # Deduplicate
     available_cols = set(combined.columns) - {target_col, id_col}
     feature_cols = [c for c in all_selected if c in available_cols]
