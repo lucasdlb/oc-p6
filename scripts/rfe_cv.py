@@ -113,9 +113,9 @@ imputer = DataImputer()
 aggregator = DataAggregator()
 transformer = DataTransformer()
 
-df = cleaner.clean(df, args.table)
-df = imputer.impute(df, args.table)
-df = aggregator.aggregate(df.lazy(), args.table, method="detailed").collect()
+df = cleaner.clean(df, args.table, method=cfg.processing.cleaning)
+df = imputer.impute(df, args.table, method=cfg.processing.imputation)
+df = aggregator.aggregate(df.lazy(), args.table, method=cfg.processing.aggregation).collect()
 df = transformer.transform(df, table=args.table)
 
 if table_config.get("has_encoding"):
