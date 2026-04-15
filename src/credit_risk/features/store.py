@@ -40,6 +40,18 @@ class FeatureStore:
             raise KeyError(f"No feature set '{name}'. Available: {available}")
         return json.loads(path.read_text())["features"]
 
+    def load_or_none(self, name: str) -> list[str] | None:
+        """Load feature list, return None if not found."""
+        path = self.root / f"{name}.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text())["features"]
+
+    def load_or_empty(self, name: str) -> list[str]:
+        """Load feature list, return empty list if not found."""
+        result = self.load_or_none(name)
+        return result if result else []
+
     def load_record(self, name: str) -> dict:
         """Load full record including metadata."""
         path = self.root / f"{name}.json"
