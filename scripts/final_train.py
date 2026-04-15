@@ -65,15 +65,13 @@ mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
 mlflow.set_experiment(f"final_train_{cfg.run.mode}-weighted_threshold-fix")
 
 sample_frac = cfg.run.sample_fraction
-if sample_frac < 1.0:
-    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
 
 logger.info("Loading data...")
 loader = PLLazyDataLoader()
+labels = loader.load_labels()
 if sample_frac < 1.0:
-    labels = loader.load_labels().collect().sample(fraction=sample_frac).lazy()
-else:
-    labels = loader.load_labels()
+    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
+    labels = labels.collect().sample(fraction=sample_frac).lazy()
 
 cleaner = DataCleaner()
 imputer = DataImputer()

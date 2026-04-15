@@ -63,9 +63,6 @@ def main():
     logger.info(f"Running in mode: {run_mode}")
 
     sample_frac = cfg.run.sample_fraction
-    if sample_frac < 1.0:
-        logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
-
     splitter = TrainTestCVSplitter(
         test_size=cfg.splitter.test_size,
         n_splits=cfg.splitter.n_splits,
@@ -110,6 +107,7 @@ def main():
 loader = PLLazyDataLoader()
 labels = loader.load_labels()
 if sample_frac < 1.0:
+    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
     labels = labels.collect().sample(fraction=sample_frac).lazy()
 
 cleaner = DataCleaner()
