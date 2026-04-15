@@ -1,0 +1,34 @@
+{
+  "name": "installments_payments_debug",
+  "features": [
+    "ins_NUM_INSTALMENT_NUMBER_sum",
+    "ins_NUM_INSTALMENT_NUMBER_std",
+    "ins_NUM_INSTALMENT_VERSION_mean",
+    "ins_AMT_INSTALMENT_min",
+    "ins_payment_to_instalment_ratio"
+  ],
+  "n_features": 5,
+  "saved_at": "2026-04-11T11:23:25.561244",
+  "meta": {
+    "table": "installments_payments",
+    "run_mode": "debug",
+    "cv_roc_auc": 0.5798192858073986,
+    "cv_roc_auc_std": 0.005800911113402196,
+    "test_roc_auc": 0.5745548325399061,
+    "test_f1": 0.16586809823645987,
+    "model_params": {
+      "max_depth": 3,
+      "n_estimators": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "min_child_samples": 20,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.1,
+      "reg_lambda": 0.1,
+      "n_jobs": -1,
+      "class_weight": "balanced",
+      "verbose": -1
+    }
+  }
+}

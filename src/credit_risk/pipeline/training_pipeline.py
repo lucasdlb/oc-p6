@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from polars import DataFrame
 
-from credit_risk.config import Config, cfg
-from credit_risk.config.experiment_config import DataSourcesConfig
+from credit_risk.config import Config, DataSourcesConfig, cfg
 from credit_risk.data.cleaner import DataCleaner
 from credit_risk.data.encoder import CategoricalEncoder
 from credit_risk.data.imputer import DataImputer

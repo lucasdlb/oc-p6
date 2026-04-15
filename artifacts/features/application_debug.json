@@ -104,7 +104,7 @@
     "car_age_x_credit"
   ],
   "n_features": 101,
-  "saved_at": "2026-04-11T10:03:58.102821",
+  "saved_at": "2026-04-11T11:03:34.437412",
   "meta": {
     "table": "application",
     "run_mode": "debug",

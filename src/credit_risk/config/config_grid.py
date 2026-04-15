@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import copy
 import itertools
+import tomllib
 from pathlib import Path
 from typing import Any, Generator
-
-import tomllib
 
 from credit_risk.config.models import Config  # isort: skip
 

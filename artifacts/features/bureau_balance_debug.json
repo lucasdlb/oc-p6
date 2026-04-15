@@ -1,0 +1,36 @@
+{
+  "name": "bureau_balance_debug",
+  "features": [
+    "bb_status_C_ratio",
+    "bb_months_balance_max",
+    "bb_months_balance_min",
+    "bb_first_half_mean_dpd",
+    "bb_avg_duration",
+    "bb_status_0_to_C_ratio",
+    "bb_avg_duration_per_credit"
+  ],
+  "n_features": 7,
+  "saved_at": "2026-04-11T11:11:41.097139",
+  "meta": {
+    "table": "bureau_balance",
+    "run_mode": "debug",
+    "cv_roc_auc": 0.5753633466734994,
+    "cv_roc_auc_std": 0.006682233583054753,
+    "test_roc_auc": 0.5753215228612414,
+    "test_f1": 0.16721352070822756,
+    "model_params": {
+      "max_depth": 3,
+      "n_estimators": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "min_child_samples": 20,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.1,
+      "reg_lambda": 0.1,
+      "n_jobs": -1,
+      "class_weight": "balanced",
+      "verbose": -1
+    }
+  }
+}

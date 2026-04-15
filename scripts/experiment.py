@@ -17,11 +17,10 @@ import warnings
 
 import mlflow
 import numpy as np
-import polars as pl
 
 from credit_risk.config import cfg
 from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.encoding import CategoricalEncoder, PolarsOneHotEncoder
+from credit_risk.data.encoding import PolarsOneHotEncoder
 from credit_risk.data.imputer import DataImputer
 from credit_risk.data.loader import PLLazyDataLoader
 from credit_risk.features.aggregator import DataAggregator

@@ -6,8 +6,7 @@ import logging
 
 from polars import LazyFrame
 
-from credit_risk.config import FeaturesConfig
-from credit_risk.config.experiment_config import DataSourcesConfig
+from credit_risk.config import DataSourcesConfig, FeaturesConfig
 from credit_risk.features.aggregators.registry import AggregatorRegistry
 
 logger = logging.getLogger(__name__)

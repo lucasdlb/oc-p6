@@ -1,0 +1,43 @@
+{
+  "name": "pos_cash_balance_debug",
+  "features": [
+    "pos_MONTHS_BALANCE_mean",
+    "pos_MONTHS_BALANCE_sum",
+    "pos_MONTHS_BALANCE_min",
+    "pos_MONTHS_BALANCE_max",
+    "pos_MONTHS_BALANCE_std",
+    "pos_CNT_INSTALMENT_mean",
+    "pos_CNT_INSTALMENT_sum",
+    "pos_CNT_INSTALMENT_FUTURE_mean",
+    "pos_CNT_INSTALMENT_FUTURE_max",
+    "pos_CNT_INSTALMENT_FUTURE_std",
+    "pos_SK_DPD_mean",
+    "pos_instalments_remaining_12m",
+    "pos_future_to_total_instalment_ratio",
+    "pos_history_span"
+  ],
+  "n_features": 14,
+  "saved_at": "2026-04-11T11:22:23.143537",
+  "meta": {
+    "table": "pos_cash_balance",
+    "run_mode": "debug",
+    "cv_roc_auc": 0.5488861095643739,
+    "cv_roc_auc_std": 0.001966872270728337,
+    "test_roc_auc": 0.548268146563384,
+    "test_f1": 0.15077541323919583,
+    "model_params": {
+      "max_depth": 3,
+      "n_estimators": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "min_child_samples": 20,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.1,
+      "reg_lambda": 0.1,
+      "n_jobs": -1,
+      "class_weight": "balanced",
+      "verbose": -1
+    }
+  }
+}

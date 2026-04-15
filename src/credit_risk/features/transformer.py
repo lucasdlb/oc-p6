@@ -6,8 +6,7 @@ import logging
 
 from polars import DataFrame
 
-from credit_risk.config import FeaturesConfig
-from credit_risk.config.experiment_config import DataSourcesConfig
+from credit_risk.config import DataSourcesConfig, FeaturesConfig
 from credit_risk.features.transformers.registry import TransformerRegistry
 
 logger = logging.getLogger(__name__)

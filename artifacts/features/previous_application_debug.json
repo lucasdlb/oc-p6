@@ -1,0 +1,34 @@
+{
+  "name": "previous_application_debug",
+  "features": [
+    "prev_AMT_ANNUITY_sum",
+    "prev_AMT_ANNUITY_min",
+    "prev_DAYS_DECISION_mean",
+    "prev_credit_to_application_ratio",
+    "prev_credit_gap_mean"
+  ],
+  "n_features": 5,
+  "saved_at": "2026-04-11T11:20:00.670468",
+  "meta": {
+    "table": "previous_application",
+    "run_mode": "debug",
+    "cv_roc_auc": 0.5760778556477135,
+    "cv_roc_auc_std": 6.072426184333679e-06,
+    "test_roc_auc": 0.5649976298218379,
+    "test_f1": 0.17394270122783084,
+    "model_params": {
+      "max_depth": 3,
+      "n_estimators": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "min_child_samples": 20,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.1,
+      "reg_lambda": 0.1,
+      "n_jobs": -1,
+      "class_weight": "balanced",
+      "verbose": -1
+    }
+  }
+}
