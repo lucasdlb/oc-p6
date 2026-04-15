@@ -15,7 +15,6 @@ from credit_risk.config.models import (
     AggregationConfig,
     Config,
     DataConfig,
-    DataSourcesConfig,
     FeaturesConfig,
     ImportanceConfig,
     InterpretConfig,
@@ -47,7 +46,6 @@ __all__ = [
     "DataConfig",
     "FeaturesConfig",
     "AggregationConfig",
-    "DataSourcesConfig",
     # Hyperparameter sweeps
     "ConfigGrid",
 ]

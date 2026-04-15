@@ -55,15 +55,6 @@ models = [
 #    "lr"
 ]
 
-[enabled_tables]
-application = true
-bureau = true
-bureau_balance = true
-previous_application = true
-pos_cash_balance = true
-installments_payments = true
-credit_card_balance = true
-
 [resampling]
 enabled = false
 method = "under"

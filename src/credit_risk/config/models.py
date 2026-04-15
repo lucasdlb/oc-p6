@@ -147,26 +147,6 @@ class DataSourceFiles(BaseModel):
     credit_card: str = "credit_card_balance.csv"
 
 
-class DataSourcesConfig(BaseModel):
-    """Configuration for which data sources to use in experiments."""
-
-    application: bool = True
-    bureau: bool = True
-    bureau_balance: bool = True
-    previous_application: bool = True
-    pos_cash_balance: bool = True
-    installments_payments: bool = True
-    credit_card_balance: bool = True
-
-    def is_enabled(self, source: str) -> bool:
-        """Check if a data source is enabled."""
-        return getattr(self, source, False)
-
-    def get_enabled_sources(self) -> list[str]:
-        """Get list of enabled source names."""
-        return [k for k, v in self.model_dump().items() if v is True]
-
-
 class TargetConfig(BaseModel):
     """Target variable configuration."""
 
@@ -235,6 +215,5 @@ class Config(BaseModel):
     interpret: InterpretConfig = Field(default_factory=InterpretConfig)
     tuning: TuningConfig = Field(default_factory=TuningConfig)
     resampling: ResamplingConfig = Field(default_factory=ResamplingConfig)
-    enabled_tables: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
