@@ -98,13 +98,13 @@ if cfg.mlflow.enabled:
     mlflow.log_dict(cfg.model_dump(), "config.json")
 
 loader = PLLazyDataLoader()
-labels = loader.load_labels().collect()
-
-df = loader.load(args.table)
-df = df.collect() if hasattr(df, "collect") else df
-
+labels = loader.load_labels()
 if sample_frac < 1.0:
-    df = df.sample(fraction=sample_frac, seed=cfg.run.random_state)
+    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
+    labels = labels.collect().sample(fraction=sample_frac).lazy()
+
+df = loader.load(args.table).join(labels, on="SK_ID_CURR", how="inner")
+df = df.collect()
 
 logger.info(f"{args.table}: {df.height} rows, {df.width} cols")
 

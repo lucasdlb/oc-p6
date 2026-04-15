@@ -82,6 +82,8 @@ if sample_frac < 1.0:
 logger.info("Loading data...")
 loader = PLLazyDataLoader()
 labels = loader.load_labels()
+if sample_frac < 1.0:
+    labels = labels.collect().sample(fraction=sample_frac).lazy()
 
 cleaner = DataCleaner()
 imputer = DataImputer()
@@ -92,11 +94,8 @@ features_list = []
 for table in TABLES:
     logger.info(f"Processing table: {table}")
 
-    df = loader.load(table)
-    df = df.collect() if hasattr(df, "collect") else df
-
-    if sample_frac < 1.0:
-        df = df.sample(fraction=sample_frac)
+    df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
+    df = df.collect()
 
     logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
