@@ -87,8 +87,7 @@ for table in TABLES:
     logger.info(f"Processing table: {table}")
 
     df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
-
-    df = df.collect() if hasattr(df, "collect") else df
+    df = df.collect()
 
     logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
@@ -97,9 +96,7 @@ for table in TABLES:
     df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
     df = transformer.transform(df, table=table, method=cfg.processing.encoding)
 
-    id_cols = [c for c in df.columns if c.startswith("SK_ID")]
-    feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]
-    df_select = df.select(["SK_ID_CURR"] + feature_cols)
+    df_select = df.drop([c for c in df.columns if c.startswith("SK_ID") and c != "SK_ID_CURR"])
     if df_select.schema["SK_ID_CURR"] != pl.Int64:
         df_select = df_select.with_columns(pl.col("SK_ID_CURR").cast(pl.Int64))
     features_list.append(df_select)

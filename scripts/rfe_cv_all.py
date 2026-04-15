@@ -120,7 +120,7 @@ for table in TABLES:
     logger.info(f"Processing table: {table}")
 
     df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
-    df = df.collect() if hasattr(df, "collect") else df
+    df = df.collect()
 
         logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
