@@ -79,7 +79,7 @@ aggregator = DataAggregator()
 transformer = DataTransformer()
 
 store = FeatureStore(root=cfg.output.features_path)
-all_selected, saved_records = store.load_tables(TABLES, suffix=f"_{run_mode}")
+all_selected, saved_records = store.load_tables(TABLES, suffix=f"_{run_mode}", with_records=True)
 logger.info(f"Total selected features: {len(all_selected)}")
 
 features_list = []
@@ -97,15 +97,11 @@ for table in TABLES:
     df = transformer.transform(df, table=table, method=cfg.processing.encoding)
 
     df_select = df.drop([c for c in df.columns if c.startswith("SK_ID") and c != "SK_ID_CURR"])
-    if df_select.schema["SK_ID_CURR"] != pl.Int64:
-        df_select = df_select.with_columns(pl.col("SK_ID_CURR").cast(pl.Int64))
     features_list.append(df_select)
 
 logger.info(f"Joining {len(features_list)} tables with labels...")
 
 combined = labels.lazy()
-if combined.schema["SK_ID_CURR"] != pl.Int64:
-    combined = combined.with_columns(pl.col("SK_ID_CURR").cast(pl.Int64))
 for i, df in enumerate(features_list):
     combined = combined.join(df.lazy(), on="SK_ID_CURR", how="left", suffix=f"_{i}")
 

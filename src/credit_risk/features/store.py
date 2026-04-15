@@ -41,17 +41,19 @@ class FeatureStore:
         self,
         tables: list[str],
         suffix: str = "",
-    ) -> tuple[list[str], dict[str, list[str]]]:
+        with_records: bool = False,
+    ) -> tuple[list[str], dict[str, list[str] | dict]]:
         """Load features for multiple tables.
 
         Args:
             tables: List of table names (e.g., ["application", "bureau"])
             suffix: Suffix to add (e.g., "_prod", "_debug")
+            with_records: If True, load full record (with meta) instead of just features
 
         Returns:
             Tuple of (all_features, loaded_by_table)
             - all_features: Combined list of all feature names (deduplicated)
-            - loaded_by_table: Dict mapping table name to its feature list
+            - loaded_by_table: Dict mapping table name to features list or full record
         """
         all_features = []
         loaded_by_table = {}
@@ -60,9 +62,10 @@ class FeatureStore:
             feature_name = f"{table}{suffix}"
             path = self.root / f"{feature_name}.json"
             if path.exists():
-                features = json.loads(path.read_text())["features"]
+                record = json.loads(path.read_text())
+                features = record["features"]
                 all_features.extend(features)
-                loaded_by_table[table] = features
+                loaded_by_table[table] = record if with_records else features
                 logger.info(f"Loaded {len(features)} features from {feature_name}")
             else:
                 logger.warning(f"No saved features for {feature_name}")
