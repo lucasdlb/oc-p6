@@ -82,6 +82,15 @@ store = FeatureStore(root=cfg.output.features_path)
 all_selected, saved_records = store.load_tables(TABLES, suffix=f"_{run_mode}", with_records=True)
 logger.info(f"Total selected features: {len(all_selected)}")
 
+saved_processing = saved_records.get("application", {}).get("meta", {}).get("processing", {})
+if saved_processing and saved_processing != cfg.processing.model_dump():
+    logger.warning(
+        f"Processing config mismatch!\n"
+        f"  Saved: {saved_processing}\n"
+        f"  Current: {cfg.processing.model_dump()}\n"
+        f"  Features may be invalid!"
+    )
+
 features_list = []
 for table in TABLES:
     logger.info(f"Processing table: {table}")

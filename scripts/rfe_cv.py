@@ -225,6 +225,7 @@ feature_store.save(
         "test_roc_auc": result.test_roc_auc,
         "test_f1": result.test_f1,
         "model_params": model_params,
+        "processing": cfg.processing.model_dump(),
     },
 )
 logger.info(
