@@ -108,7 +108,7 @@ def main():
         mlflow.log_dict(cfg.model_dump(), "config.json")
 
     loader = PLLazyDataLoader()
-    labels = loader.load_labels()
+    labels = loader.load_labels_lazy()
 
     cleaner = DataCleaner()
     imputer = DataImputer()
@@ -119,11 +119,8 @@ def main():
     for table in TABLES:
         logger.info(f"Processing table: {table}")
 
-        df = loader.load(table)
+        df = loader.load_by_labels(table, labels, sample_fraction=sample_frac)
         df = df.collect() if hasattr(df, "collect") else df
-
-        if sample_frac < 1.0:
-            df = df.sample(fraction=sample_frac)
 
         logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 

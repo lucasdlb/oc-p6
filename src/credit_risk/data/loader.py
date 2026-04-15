@@ -178,6 +178,65 @@ class BaseDataLoader(ABC):
             "installments_payments": self.load_installments_payments(),
         }
 
+    def load_labels_lazy(self) -> pl.LazyFrame:
+        """Load labels as lazy frame for efficient filtering."""
+        return self.load("application").select(["SK_ID_CURR", "TARGET"]).lazy()
+
+    def load_merged_labels(self, sample_fraction: float = 1.0) -> pl.LazyFrame:
+        """Load labels, optionally sampled.
+
+        Args:
+            sample_fraction: If < 1.0, sample this fraction
+
+        Returns:
+            LazyFrame with TARGET
+        """
+        labels = self.load_labels_lazy()
+        if sample_fraction < 1.0:
+            labels = labels.sample(fraction=sample_fraction)
+        return labels
+
+    def load_by_labels(
+        self, name: str, labels: pl.LazyFrame, sample_fraction: float = 1.0
+    ) -> pl.LazyFrame:
+        """Load a table filtered to only include IDs in sampled labels.
+
+        For child tables, first get SK_ID_CURR from the filtered labels,
+        then load table and join.
+
+        Args:
+            name: Table name to load
+            labels: LazyFrame with SK_ID_CURR column for filtering
+            sample_fraction: If < 1.0, sample this fraction of labels before loading
+
+        Returns:
+            LazyFrame filtered to matching IDs
+        """
+        if sample_fraction < 1.0:
+            labels = labels.sample(fraction=sample_fraction)
+
+        app_ids = labels.select("SK_ID_CURR")
+
+        if name == "application":
+            data = self.load(name).lazy()
+            return data.join(app_ids, on="SK_ID_CURR", how="inner")
+
+        data = self.load(name).lazy()
+
+        if name in ("bureau", "bureau_balance"):
+            bureau_link = self.load("bureau").select(["SK_ID_BUREAU", "SK_ID_CURR"])
+            bureau_ids = bureau_link.join(app_ids, on="SK_ID_CURR", how="inner").select(
+                "SK_ID_BUREAU"
+            )
+            return data.join(bureau_ids, on="SK_ID_BUREAU", how="inner")
+
+        if name in ("pos_cash_balance", "previous_application"):
+            link = self.load(name).select(["SK_ID_PREV", "SK_ID_CURR"]).unique()
+            link_ids = link.join(app_ids, on="SK_ID_CURR", how="inner").select("SK_ID_PREV")
+            return data.join(link_ids, on="SK_ID_PREV", how="inner")
+
+        return data.join(app_ids, on="SK_ID_CURR", how="inner")
+
 
 class PLDataLoader(BaseDataLoader):
     """Polars eager data loader."""
