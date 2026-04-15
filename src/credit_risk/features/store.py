@@ -37,35 +37,6 @@ class FeatureStore:
         logger.info(f"Saved {len(features)} features to {name}")
         return path
 
-    def load(self, name: str) -> list[str]:
-        """Load a feature list by name."""
-        path = self.root / f"{name}.json"
-        if not path.exists():
-            available = [p.stem for p in self.root.glob("*.json")]
-            raise KeyError(f"No feature set '{name}'. Available: {available}")
-        features = json.loads(path.read_text())["features"]
-        logger.info(f"Loaded {len(features)} features from {name}")
-        return features
-
-    def load_or_none(self, name: str) -> list[str] | None:
-        """Load feature list, return None if not found."""
-        path = self.root / f"{name}.json"
-        if not path.exists():
-            return None
-        return json.loads(path.read_text())["features"]
-
-    def load_or_empty(self, name: str) -> list[str]:
-        """Load feature list, return empty list if not found."""
-        result = self.load_or_none(name)
-        return result if result else []
-
-    def load_record(self, name: str) -> dict:
-        """Load full record including metadata."""
-        path = self.root / f"{name}.json"
-        record = json.loads(path.read_text())
-        logger.info(f"Loaded record {name} with {record.get('n_features', 0)} features")
-        return record
-
     def load_tables(
         self,
         tables: list[str],
@@ -87,8 +58,9 @@ class FeatureStore:
 
         for table in tables:
             feature_name = f"{table}{suffix}"
-            features = self.load_or_none(feature_name)
-            if features:
+            path = self.root / f"{feature_name}.json"
+            if path.exists():
+                features = json.loads(path.read_text())["features"]
                 all_features.extend(features)
                 loaded_by_table[table] = features
                 logger.info(f"Loaded {len(features)} features from {feature_name}")
@@ -100,6 +72,3 @@ class FeatureStore:
             f"Total: loaded {len(all_features)} unique features from {len(loaded_by_table)} tables"
         )
         return all_features, loaded_by_table
-
-    def available(self) -> list[str]:
-        return [p.stem for p in self.root.glob("*.json")]
