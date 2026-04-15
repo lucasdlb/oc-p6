@@ -141,19 +141,11 @@ if USE_SELECTED_FEATURES:
 
     store = FeatureStore(root=cfg.output.features_path)
     all_selected, _ = store.load_tables(TABLES, suffix=f"_{run_mode}")
-    all_selected = list(set(all_selected))  # Deduplicate
+    all_selected = list(set(all_selected))
     available_cols = set(combined.columns) - {target_col, id_col}
     feature_cols = [c for c in all_selected if c in available_cols]
-    logger.info(f"Using {len(feature_cols)} selected features")
 else:
     feature_cols = [c for c in combined.columns if c not in [target_col, id_col]]
-    logger.info(f"Using {len(feature_cols)} all features")
-
-X = combined.select(feature_cols).to_pandas()
-y = combined.select(target_col).to_numpy().ravel()
-
-# X = X.fillna(0.0).replace([np.inf, -np.inf], 0.0)
-X = X.to_numpy(dtype=np.float64)
 
 logger.info(f"Data shape: {X.shape}, Features: {len(feature_cols)}")
 

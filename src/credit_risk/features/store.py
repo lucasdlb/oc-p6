@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 class FeatureStore:
@@ -30,6 +34,7 @@ class FeatureStore:
         }
         path = self.root / f"{name}.json"
         path.write_text(json.dumps(record, indent=2))
+        logger.info(f"Saved {len(features)} features to {name}")
         return path
 
     def load(self, name: str) -> list[str]:
@@ -38,7 +43,9 @@ class FeatureStore:
         if not path.exists():
             available = [p.stem for p in self.root.glob("*.json")]
             raise KeyError(f"No feature set '{name}'. Available: {available}")
-        return json.loads(path.read_text())["features"]
+        features = json.loads(path.read_text())["features"]
+        logger.info(f"Loaded {len(features)} features from {name}")
+        return features
 
     def load_or_none(self, name: str) -> list[str] | None:
         """Load feature list, return None if not found."""
@@ -55,7 +62,9 @@ class FeatureStore:
     def load_record(self, name: str) -> dict:
         """Load full record including metadata."""
         path = self.root / f"{name}.json"
-        return json.loads(path.read_text())
+        record = json.loads(path.read_text())
+        logger.info(f"Loaded record {name} with {record.get('n_features', 0)} features")
+        return record
 
     def load_tables(
         self,
@@ -82,8 +91,14 @@ class FeatureStore:
             if features:
                 all_features.extend(features)
                 loaded_by_table[table] = features
+                logger.info(f"Loaded {len(features)} features from {feature_name}")
+            else:
+                logger.warning(f"No saved features for {feature_name}")
 
         all_features = list(set(all_features))
+        logger.info(
+            f"Total: loaded {len(all_features)} unique features from {len(loaded_by_table)} tables"
+        )
         return all_features, loaded_by_table
 
     def available(self) -> list[str]:
