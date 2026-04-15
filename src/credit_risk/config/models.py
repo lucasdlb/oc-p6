@@ -238,10 +238,3 @@ class Config(BaseModel):
     enabled_tables: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
-
-    @model_validator(mode="after")
-    def validate_search_preset(self) -> "Config":
-        from credit_risk.config.registry import get_configs
-
-        get_configs(self.search.preset)
-        return self

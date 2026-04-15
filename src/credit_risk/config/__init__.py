@@ -4,12 +4,13 @@ Exports:
   - cfg: Global Config instance
   - Config: Pydantic model for config validation
   - load_config(): Function to load/reload config
-  - ModelGridConfig, REGISTRY, PRESETS, get_configs(), trim_grid(): Grid search registry
+  - ConfigGrid: For hyperparameter sweeps
 """
 
 from __future__ import annotations
 
 from credit_risk.config.config import cfg, load_config, reload_config
+from credit_risk.config.config_grid import ConfigGrid
 from credit_risk.config.models import (
     AggregationConfig,
     Config,
@@ -25,14 +26,6 @@ from credit_risk.config.models import (
     SelectionConfig,
     SplitterConfig,
     TuningConfig,
-)
-from credit_risk.config.registry import (
-    PRESETS,
-    REGISTRY,
-    ModelGridConfig,
-    get_all_configs,
-    get_configs,
-    trim_grid,
 )
 
 __all__ = [
@@ -55,11 +48,6 @@ __all__ = [
     "FeaturesConfig",
     "AggregationConfig",
     "DataSourcesConfig",
-    # Registry
-    "REGISTRY",
-    "PRESETS",
-    "ModelGridConfig",
-    "get_configs",
-    "get_all_configs",
-    "trim_grid",
+    # Hyperparameter sweeps
+    "ConfigGrid",
 ]
