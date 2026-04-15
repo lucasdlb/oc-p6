@@ -31,17 +31,20 @@ class DataCleaner:
         self.config = config or cfg.data
         self.data_sources = data_sources
 
-    def clean(self, df: DataFrame, table: str = "application") -> DataFrame:
+    def clean(
+        self, df: DataFrame, table: str = "application", method: str | None = None
+    ) -> DataFrame:
         """Clean data for a specific table.
 
         Args:
             df: Input dataframe.
             table: Table name (e.g., "application", "bureau")
+            method: Cleaning method (default from config)
 
         Returns:
             Cleaned dataframe.
         """
-        method = self._get_cleaning_method(table)
+        method = method or self._get_cleaning_method(table)
         logger.info(f"Cleaning table '{table}' with method '{method}'")
         logger.info(f"  Before: {df.height} rows, {df.width} cols")
         cleaner = CleaningRegistry.get_cleaner(table, method)

@@ -108,9 +108,9 @@ for table in TABLES:
 
     logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
-    df = cleaner.clean(df, table)
-    df = imputer.impute(df, table)
-    df = aggregator.aggregate(df.lazy(), table, method="detailed").collect()
+    df = cleaner.clean(df, table, method=cfg.processing.cleaning)
+    df = imputer.impute(df, table, method=cfg.processing.imputation)
+    df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
     df = transformer.transform(df, table=table)
 
     id_cols = [c for c in df.columns if c.startswith("SK_ID")]

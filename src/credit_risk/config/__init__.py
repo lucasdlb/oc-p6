@@ -20,6 +20,7 @@ from credit_risk.config.models import (
     InterpretConfig,
     MLFlowConfig,
     ModelConfig,
+    ProcessingConfig,
     RunConfig,
     SearchConfig,
     SelectionConfig,
@@ -46,6 +47,7 @@ __all__ = [
     "DataConfig",
     "FeaturesConfig",
     "AggregationConfig",
+    "ProcessingConfig",
     # Hyperparameter sweeps
     "ConfigGrid",
 ]

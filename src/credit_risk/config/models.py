@@ -110,6 +110,15 @@ class ResamplingConfig(BaseModel):
     random_state: int = 42
 
 
+class ProcessingConfig(BaseModel):
+    """Processing pipeline configuration for data cleaning, imputation, aggregation."""
+
+    cleaning: str = "default"
+    imputation: str = "default"
+    aggregation: str = "detailed"
+    encoding: Literal["onehot", "label", "none"] = "onehot"
+
+
 class OutputConfig(BaseModel):
     """Output paths for artifacts, models, mlflow."""
 
@@ -215,5 +224,6 @@ class Config(BaseModel):
     interpret: InterpretConfig = Field(default_factory=InterpretConfig)
     tuning: TuningConfig = Field(default_factory=TuningConfig)
     resampling: ResamplingConfig = Field(default_factory=ResamplingConfig)
+    processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)

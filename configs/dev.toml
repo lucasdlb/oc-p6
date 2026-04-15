@@ -61,6 +61,12 @@ models = [
 #    "lr"
 ]
 
+[processing]
+cleaning = "default"
+imputation = "default"
+aggregation = "detailed"
+encoding = "onehot"
+
 [resampling]
 enabled = false
 method = "smote"
