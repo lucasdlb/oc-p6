@@ -107,20 +107,22 @@ def main():
 
         mlflow.log_dict(cfg.model_dump(), "config.json")
 
-    loader = PLLazyDataLoader()
-    labels = loader.load_labels()  # now lazy
+loader = PLLazyDataLoader()
+labels = loader.load_labels()
+if sample_frac < 1.0:
+    labels = labels.sample(fraction=sample_frac)
 
-    cleaner = DataCleaner()
+cleaner = DataCleaner()
     imputer = DataImputer()
     aggregator = DataAggregator()
     transformer = DataTransformer()
 
-    features_list = []
-    for table in TABLES:
-        logger.info(f"Processing table: {table}")
+features_list = []
+for table in TABLES:
+    logger.info(f"Processing table: {table}")
 
-        df = loader.load_by_labels(table, labels, sample_fraction=sample_frac)
-        df = df.collect() if hasattr(df, "collect") else df
+    df = loader.load(table).lazy().join(labels, on="SK_ID_CURR", how="inner")
+    df = df.collect() if hasattr(df, "collect") else df
 
         logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
