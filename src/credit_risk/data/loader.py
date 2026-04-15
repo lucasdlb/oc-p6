@@ -159,39 +159,13 @@ class BaseDataLoader(ABC):
     def load_sample_submission(self) -> Any:
         return self.load("sample_submission")
 
-    def load_labels(self) -> Any:
-        """Load SK_ID_CURR and TARGET columns."""
-        return self.load("application").select(["SK_ID_CURR", "TARGET"])
-
-    def load_application_features(self) -> Any:
-        """Load application_train without TARGET."""
-        return self.load("application_train").drop("TARGET")
-
-    def load_all_lazy(self) -> dict[str, pl.LazyFrame]:
-        """Load all auxiliary tables as lazy frames."""
-        return {
-            "bureau": self.load_bureau(),
-            "bureau_balance": self.load_bureau_balance(),
-            "previous_application": self.load_previous_application(),
-            "pos_cash_balance": self.load_pos_cash_balance(),
-            "credit_card_balance": self.load_credit_card_balance(),
-            "installments_payments": self.load_installments_payments(),
-        }
-
-    def load_labels_lazy(self) -> pl.LazyFrame:
-        """Load labels as lazy frame for efficient filtering."""
+    def load_labels(self) -> pl.LazyFrame:
+        """Load SK_ID_CURR and TARGET columns as lazy frame."""
         return self.load("application").select(["SK_ID_CURR", "TARGET"]).lazy()
 
     def load_merged_labels(self, sample_fraction: float = 1.0) -> pl.LazyFrame:
-        """Load labels, optionally sampled.
-
-        Args:
-            sample_fraction: If < 1.0, sample this fraction
-
-        Returns:
-            LazyFrame with TARGET
-        """
-        labels = self.load_labels_lazy()
+        """Load labels, optionally sampled."""
+        labels = self.load_labels()
         if sample_fraction < 1.0:
             labels = labels.sample(fraction=sample_fraction)
         return labels

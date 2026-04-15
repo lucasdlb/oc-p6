@@ -108,7 +108,7 @@ def main():
         mlflow.log_dict(cfg.model_dump(), "config.json")
 
     loader = PLLazyDataLoader()
-    labels = loader.load_labels_lazy()
+    labels = loader.load_labels()  # now lazy
 
     cleaner = DataCleaner()
     imputer = DataImputer()
