@@ -33,14 +33,6 @@ nb_remove_features = 0.3
 [importance]
 method = "inner"
 
-[mlflow]
-enabled = true
-experiment_name = "all_tables_rfe_cv"
-
-[search]
-preset = "fast"
-max_grid_values = 3
-
 [tuning]
 n_trials = 30
 timeout = 7200
@@ -55,10 +47,16 @@ models = [
 #    "lr"
 ]
 
-[processing]
-cleaning = "default"
-imputation = "default"
-aggregation = "detailed"
+[cleaner]
+method = "default"
+
+[imputer]
+method = "default"
+
+[aggregator]
+method = "detailed"
+
+[transformer]
 encoding = "onehot"
 
 [resampling]

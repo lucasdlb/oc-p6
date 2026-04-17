@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 def _find_project_root() -> Path:
@@ -39,26 +39,39 @@ class SplitterConfig(BaseModel):
 class ModelConfig(BaseModel):
     """Model hyperparameters configuration."""
 
-    max_depth: int = Field(gt=0, default=5)
-    n_estimators: int = Field(gt=0, default=500)
-    learning_rate: float = Field(gt=0, default=0.02)
-    num_leaves: int = Field(gt=0, default=31)
-    min_child_samples: int = Field(gt=0, default=20)
-    subsample: float = Field(ge=0.0, le=1.0, default=0.8)
-    colsample_bytree: float = Field(ge=0.0, le=1.0, default=0.8)
-    reg_alpha: float = Field(default=0.1)
-    reg_lambda: float = Field(default=0.1)
-    n_jobs: int = Field(default=-1)
-    class_weight: str = Field(default="balanced")
-    verbose: int = Field(default=-1)
+    max_depth: int = Field(gt=0)
+    n_estimators: int = Field(gt=0)
+    learning_rate: float = Field(gt=0)
+    num_leaves: int = Field(gt=0)
+    min_child_samples: int = Field(gt=0)
+    subsample: float = Field(ge=0.0, le=1.0)
+    colsample_bytree: float = Field(ge=0.0, le=1.0)
+    reg_alpha: float
+    reg_lambda: float
+    n_jobs: int
+    class_weight: str
+    verbose: int
 
 
 class SelectionConfig(BaseModel):
     """Feature selection configuration."""
 
-    min_features: int = Field(gt=0, default=20)
-    tolerance: float = Field(gt=0, default=0.005)
-    nb_remove_features: float = Field(default=0.3)
+    min_features: int = Field(gt=0)
+    tolerance: float = Field(gt=0)
+    nb_remove_features: float
+
+    @classmethod
+    def from_toml(cls) -> "SelectionConfig":
+        """Load SelectionConfig from mode-specific TOML."""
+        import os
+        import tomllib
+
+        mode = os.getenv("RUN_MODE", "prod")
+        from credit_risk.config.config import CONFIG_DIR
+
+        with open(CONFIG_DIR / f"{mode}.toml", "rb") as f:
+            data = tomllib.load(f)
+        return cls(**data.get("selection", {}))
 
 
 class ImportanceConfig(BaseModel):
@@ -66,12 +79,18 @@ class ImportanceConfig(BaseModel):
 
     method: Literal["inner", "forest", "statistical", "permutation", "shap"] = "inner"
 
+    @classmethod
+    def from_toml(cls) -> "ImportanceConfig":
+        """Load ImportanceConfig from mode-specific TOML."""
+        import os
+        import tomllib
 
-class MLFlowConfig(BaseModel):
-    """MLflow tracking configuration."""
+        mode = os.getenv("RUN_MODE", "prod")
+        from credit_risk.config.config import CONFIG_DIR
 
-    enabled: bool = True
-    experiment_name: str = "experiment"
+        with open(CONFIG_DIR / f"{mode}.toml", "rb") as f:
+            data = tomllib.load(f)
+        return cls(**data.get("importance", {}))
 
 
 class InterpretConfig(BaseModel):
@@ -80,12 +99,18 @@ class InterpretConfig(BaseModel):
     shap_background_samples: int = 1000
     shap_n_samples: int = 100
 
+    @classmethod
+    def from_toml(cls) -> "InterpretConfig":
+        """Load InterpretConfig from mode-specific TOML."""
+        import os
+        import tomllib
 
-class SearchConfig(BaseModel):
-    """Grid search configuration."""
+        mode = os.getenv("RUN_MODE", "prod")
+        from credit_risk.config.config import CONFIG_DIR
 
-    preset: str = "fast"
-    max_grid_values: int = Field(gt=0, default=3)
+        with open(CONFIG_DIR / f"{mode}.toml", "rb") as f:
+            data = tomllib.load(f)
+        return cls(**data.get("interpret", {}))
 
 
 class TuningConfig(BaseModel):
@@ -99,6 +124,19 @@ class TuningConfig(BaseModel):
     pruner: Literal["median", "hyperband", "none"] = "none"
     models: list[str] = Field(default_factory=lambda: ["lgbm"])
 
+    @classmethod
+    def from_toml(cls) -> "TuningConfig":
+        """Load TuningConfig from mode-specific TOML."""
+        import os
+        import tomllib
+
+        mode = os.getenv("RUN_MODE", "prod")
+        from credit_risk.config.config import CONFIG_DIR
+
+        with open(CONFIG_DIR / f"{mode}.toml", "rb") as f:
+            data = tomllib.load(f)
+        return cls(**data.get("tuning", {}))
+
 
 class ResamplingConfig(BaseModel):
     """Resampling configuration for handling imbalanced data."""
@@ -109,13 +147,41 @@ class ResamplingConfig(BaseModel):
     k_neighbors: int = 5
     random_state: int = 42
 
+    @classmethod
+    def from_toml(cls) -> "ResamplingConfig":
+        """Load ResamplingConfig from mode-specific TOML."""
+        import os
+        import tomllib
 
-class ProcessingConfig(BaseModel):
-    """Processing pipeline configuration for data cleaning, imputation, aggregation."""
+        mode = os.getenv("RUN_MODE", "prod")
+        from credit_risk.config.config import CONFIG_DIR
 
-    cleaning: str = "default"
-    imputation: str = "default"
-    aggregation: str = "detailed"
+        with open(CONFIG_DIR / f"{mode}.toml", "rb") as f:
+            data = tomllib.load(f)
+        return cls(**data.get("resampling", {}))
+
+
+class CleanerConfig(BaseModel):
+    """Configuration for data cleaning step."""
+
+    method: str = "default"
+
+
+class ImputerConfig(BaseModel):
+    """Configuration for data imputation step."""
+
+    method: str = "default"
+
+
+class AggregatorConfig(BaseModel):
+    """Configuration for feature aggregation step."""
+
+    method: str = "detailed"
+
+
+class TransformerConfig(BaseModel):
+    """Configuration for feature transformation step."""
+
     encoding: Literal["onehot", "label", "none"] = "onehot"
 
 
@@ -125,6 +191,7 @@ class OutputConfig(BaseModel):
     models_dir: str = "models"
     features_dir: str = "artifacts/features"
     mlflow_db: str = "mlflow.db"
+    mlflow_db_type: Literal["sqlite", "postgresql", "mysql"] = "sqlite"
 
     @property
     def models_path(self) -> Path:
@@ -137,6 +204,17 @@ class OutputConfig(BaseModel):
     @property
     def mlflow_db_path(self) -> Path:
         return PROJECT_ROOT / self.mlflow_db
+
+    def mlflow_tracking_uri(self) -> str:
+        """Build MLflow tracking URI based on db type."""
+        if self.mlflow_db_type == "sqlite":
+            return f"sqlite:///{self.mlflow_db_path}"
+        elif self.mlflow_db_type == "postgresql":
+            # For postgresql, expects db name in mlflow_db field
+            return f"postgresql:///{self.mlflow_db}"
+        elif self.mlflow_db_type == "mysql":
+            return f"mysql:///{self.mlflow_db}"
+        return f"sqlite:///{self.mlflow_db_path}"
 
 
 # -----------------------------------------------------------------------------
@@ -214,16 +292,21 @@ class DataConfig(BaseModel):
 class Config(BaseModel):
     """Full configuration combining runtime mode and static data config."""
 
+    # Always required
     run: RunConfig = Field(default_factory=RunConfig)
     splitter: SplitterConfig = Field(default_factory=SplitterConfig)
-    model: ModelConfig = Field(default_factory=ModelConfig)
-    selection: SelectionConfig = Field(default_factory=SelectionConfig)
-    importance: ImportanceConfig = Field(default_factory=ImportanceConfig)
-    mlflow: MLFlowConfig = Field(default_factory=MLFlowConfig)
-    search: SearchConfig = Field(default_factory=SearchConfig)
-    interpret: InterpretConfig = Field(default_factory=InterpretConfig)
-    tuning: TuningConfig = Field(default_factory=TuningConfig)
-    resampling: ResamplingConfig = Field(default_factory=ResamplingConfig)
-    processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    # Top-level processing step configs
+    cleaner: CleanerConfig = Field(default_factory=CleanerConfig)
+    imputer: ImputerConfig = Field(default_factory=ImputerConfig)
+    aggregator: AggregatorConfig = Field(default_factory=AggregatorConfig)
+    transformer: TransformerConfig = Field(default_factory=TransformerConfig)
+
+    # Step-specific — only needed if that step runs
+    model: Optional[ModelConfig] = None
+    selection: Optional[SelectionConfig] = None
+    tuning: Optional[TuningConfig] = None
+    resampling: Optional[ResamplingConfig] = None
+    interpret: Optional[InterpretConfig] = None
+    importance: Optional[ImportanceConfig] = None

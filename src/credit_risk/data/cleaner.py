@@ -25,9 +25,9 @@ class DataCleaner:
         config: DataConfig | None = None,
         data_sources: DataSourcesConfig | None = None,
     ):
-        from credit_risk.config import cfg
+        from credit_risk.config import load_config
 
-        self.config = config or cfg.data
+        self.config = config or load_config().data
         self.data_sources = data_sources
 
     def clean(
@@ -46,8 +46,18 @@ class DataCleaner:
         method = method or self._get_cleaning_method(table)
         logger.info(f"Cleaning table '{table}' with method '{method}'")
         logger.info(f"  Before: {df.height} rows, {df.width} cols")
+        original_cols = set(df.columns)
         cleaner = CleaningRegistry.get_cleaner(table, method)
         result = cleaner.clean(df)
+
+        new_cols = set(result.columns)
+        added = new_cols - original_cols
+        removed = original_cols - new_cols
+        if added:
+            logger.info(f"  Added columns: {sorted(added)}")
+        if removed:
+            logger.info(f"  Removed columns: {sorted(removed)}")
+
         logger.info(f"  After: {result.height} rows, {result.width} cols")
         return result
 

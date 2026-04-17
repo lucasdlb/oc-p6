@@ -46,9 +46,9 @@ class BureauAggregator(TableAggregator):
     """Aggregator for bureau table."""
 
     def __init__(self, config: FeaturesConfig | None = None):
-        from credit_risk.config import cfg
+        from credit_risk.config import load_config
 
-        self.config = config or cfg.data.features
+        self.config = config or load_config().data.features
 
     @classmethod
     def load_link(cls) -> LazyFrame | None:

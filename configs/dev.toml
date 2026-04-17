@@ -39,14 +39,6 @@ nb_remove_features = 0.3
 [importance]
 method = "inner"
 
-[mlflow]
-enabled = true
-experiment_name = "dev"
-
-[search]
-preset = "fast"
-max_grid_values = 2
-
 [tuning]
 n_trials = 5
 timeout = 1800
@@ -61,10 +53,16 @@ models = [
 #    "lr"
 ]
 
-[processing]
-cleaning = "default"
-imputation = "default"
-aggregation = "detailed"
+[cleaner]
+method = "default"
+
+[imputer]
+method = "default"
+
+[aggregator]
+method = "detailed"
+
+[transformer]
 encoding = "onehot"
 
 [resampling]

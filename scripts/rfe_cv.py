@@ -15,21 +15,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
+import tempfile
 import warnings
 
 import mlflow
-import polars as pl
 
-from credit_risk.config import cfg
+from credit_risk.config import load_config
 from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.encoding import CategoricalEncoder
 from credit_risk.data.imputer import DataImputer
 from credit_risk.data.loader import PLLazyDataLoader
 from credit_risk.features.aggregator import DataAggregator
 from credit_risk.features.store import FeatureStore
 from credit_risk.features.transformer import DataTransformer
+from credit_risk.mlflow_utils import MlflowLogger
 from credit_risk.models.cross_validator import LGBMFactory
 from credit_risk.models.feature_selector import BackwardFeatureSelector
 from credit_risk.models.final_model import FinalModelTrainer
@@ -50,14 +51,14 @@ parser = argparse.ArgumentParser(description="RFE-CV feature selection")
 parser.add_argument("--table", type=str, default="application")
 args = parser.parse_args()
 
+cfg = load_config("selection", "importance")
+
 table = args.table
-experiment_name = f"{table}_rfe_cv"
 run_mode = cfg.run.mode
+experiment_name = f"{table}_rfe_cv_{run_mode}"
 logger.info(f"Running in mode: {run_mode}, table: {args.table}")
 
 sample_frac = cfg.run.sample_fraction
-if sample_frac < 1.0:
-    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
 
 splitter = TrainTestCVSplitter(
     test_size=cfg.splitter.test_size,
@@ -74,104 +75,83 @@ threshold_selector = CVThresholdSelector(
 ImportanceClass = get_importance_class(cfg.importance.method)
 importance_strategy = ImportanceClass()
 
-if cfg.mlflow.enabled:
-    mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
-    mlflow.set_experiment(experiment_name)
+mlflow.set_tracking_uri(cfg.output.mlflow_tracking_uri())
+mlflow.set_experiment(experiment_name)
+ml_logger = MlflowLogger()
 
-    if mlflow.active_run():
-        mlflow.end_run()
+run_name = f"{run_mode}_{args.table}"
+with ml_logger.start_run(run_name=run_name):
+    ml_logger.log_flat_config(cfg)
+    ml_logger.log_params({"run_mode": run_mode, "table": args.table})
 
-    run_name = f"{run_mode}_{args.table}"
-    mlflow.start_run(run_name=run_name)
-    mlflow.log_params({"run_mode": run_mode, "table": args.table})
-    mlflow.log_params(cfg.model.model_dump())
+    loader = PLLazyDataLoader()
+    labels = loader.load_labels()
+    if sample_frac < 1.0:
+        logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
+        labels = labels.collect().sample(fraction=sample_frac, seed=cfg.run.random_state).lazy()
 
-    mlflow.log_dict(cfg.model_dump(), "config.json")
+    df = loader.load(args.table).join(labels, on="SK_ID_CURR", how="inner")
+    df = df.collect()
 
-loader = PLLazyDataLoader()
-labels = loader.load_labels()
-if sample_frac < 1.0:
-    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
-    labels = labels.collect().sample(fraction=sample_frac).lazy()
+    logger.info(f"{args.table}: {df.height} rows, {df.width} cols")
 
-df = loader.load(args.table).join(labels, on="SK_ID_CURR", how="inner")
-df = df.collect()
+    cleaner = DataCleaner()
+    imputer = DataImputer()
+    aggregator = DataAggregator()
+    transformer = DataTransformer()
 
-logger.info(f"{args.table}: {df.height} rows, {df.width} cols")
+    df = cleaner.clean(df, table, method=cfg.cleaner.method)
+    df = imputer.impute(df, table, method=cfg.imputer.method)
+    df = aggregator.aggregate(df.lazy(), table, method=cfg.aggregator.method).collect()
+    df = transformer.transform(df, table=table, encoding=cfg.transformer.encoding)
 
-cleaner = DataCleaner()
-imputer = DataImputer()
-aggregator = DataAggregator()
-transformer = DataTransformer()
+    df = df.drop("TARGET")
+    main_df = labels.join(df.lazy(), on="SK_ID_CURR", how="inner").collect()
+    logger.info(f"Dataset: {main_df.height} rows")
 
-df = cleaner.clean(df, table, method=cfg.processing.cleaning)
-df = imputer.impute(df, table, method=cfg.processing.imputation)
-df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
-df = transformer.transform(df, table=table)
+    target_col = cfg.data.target.column
+    id_col = cfg.data.target.id_column
 
-# Encoding only for application (main table)
-if table == "application" and cfg.processing.encoding != "none":
-    encoder = CategoricalEncoder()
-    df = encoder.fit_transform(df)
-    logger.info(f"Encoded: {df.height} rows, {df.width} cols")
+    y_full = main_df.select(target_col).to_numpy().ravel()
 
-main_df = labels.join(df, on="SK_ID_CURR", how="inner")
-logger.info(f"Dataset: {main_df.height} rows")
+    suffix_cols = [c for c in main_df.columns if c.endswith("_right")]
+    if suffix_cols:
+        main_df = main_df.drop(suffix_cols)
 
-non_numeric = [c for c in main_df.columns if main_df.schema[c] == pl.String]
-if non_numeric:
-    main_df = main_df.drop(non_numeric)
+    feature_cols = [c for c in main_df.columns if c not in [target_col, id_col]]
 
-target_col = cfg.data.target.column
-id_col = cfg.data.target.id_column
+    X_full = main_df.select(feature_cols).to_pandas().values
+    y_full = main_df.select(target_col).to_numpy().ravel()
 
-y_full = main_df.select(target_col).to_numpy().ravel()
+    logger.info(f"Features: {len(feature_cols)}")
+    logger.info(f"Total samples: {X_full.shape[0]}")
 
-suffix_cols = [c for c in main_df.columns if c.endswith("_right")]
-if suffix_cols:
-    main_df = main_df.drop(suffix_cols)
+    X_train, X_test, y_train, y_test = splitter.split_train_test(X_full, y_full)
 
-feature_cols = [c for c in main_df.columns if c not in [target_col, id_col]]
+    logger.info(f"Train: {X_train.shape[0]} samples, Test: {X_test.shape[0]} samples")
 
-X_full = (
-    main_df.select(feature_cols)
-    .to_pandas()
-    # .fillna(0.0)
-    # .replace([float("inf"), float("-inf")], 0.0)
-    .values
-)
-y_full = main_df.select(target_col).to_numpy().ravel()
+    model_params = cfg.model.model_dump()
 
-logger.info(f"Features: {len(feature_cols)}")
-logger.info(f"Total samples: {X_full.shape[0]}")
+    logger.info(
+        f"RFE-CV backward selection (min {cfg.selection.min_features} features, "
+        f"remove {cfg.selection.nb_remove_features} per step, importance: {cfg.importance.method})"
+    )
+    selector = BackwardFeatureSelector(
+        splitter=splitter,
+        metrics=ranking_metrics,
+        model_factory=model_factory,
+        importance_strategy=importance_strategy,
+        selection_metric_name="roc_auc",
+        min_features=cfg.selection.min_features,
+        tolerance=cfg.selection.tolerance,
+        nb_remove_features=cfg.selection.nb_remove_features,
+        verbose=True,
+    )
+    best_features, best_cv_result = selector.eliminate(
+        X_train, y_train, model_params, feature_names=feature_cols
+    )
 
-X_train, X_test, y_train, y_test = splitter.split_train_test(X_full, y_full)
-
-logger.info(f"Train: {X_train.shape[0]} samples, Test: {X_test.shape[0]} samples")
-
-model_params = cfg.model.model_dump()
-
-logger.info(
-    f"RFE-CV backward selection (min {cfg.selection.min_features} features, "
-    f"remove {cfg.selection.nb_remove_features} per step, importance: {cfg.importance.method})..."
-)
-selector = BackwardFeatureSelector(
-    splitter=splitter,
-    metrics=ranking_metrics,
-    model_factory=model_factory,
-    importance_strategy=importance_strategy,
-    selection_metric_name="roc_auc",
-    min_features=cfg.selection.min_features,
-    tolerance=cfg.selection.tolerance,
-    nb_remove_features=cfg.selection.nb_remove_features,
-    verbose=True,
-)
-best_features, best_cv_result = selector.eliminate(
-    X_train, y_train, model_params, feature_names=feature_cols
-)
-
-if cfg.mlflow.enabled:
-    mlflow.log_metrics(
+    ml_logger.log_metrics(
         {
             "cv_best_roc_auc": best_cv_result.mean_scores.get("roc_auc", 0),
             "cv_best_roc_auc_std": best_cv_result.std_scores.get("roc_auc", 0),
@@ -179,22 +159,21 @@ if cfg.mlflow.enabled:
         }
     )
 
-logger.info(f"Best feature set: {len(best_features)} features")
-logger.info(f"Best features: {best_features}")
+    logger.info(f"Best feature set: {len(best_features)} features")
+    logger.info(f"Best features: {best_features}")
 
-best_indices = [feature_cols.index(f) for f in best_features]
-X_train_best = X_train[:, best_indices]
-X_test_best = X_test[:, best_indices]
+    best_indices = [feature_cols.index(f) for f in best_features]
+    X_train_best = X_train[:, best_indices]
+    X_test_best = X_test[:, best_indices]
 
-trainer = FinalModelTrainer(
-    model_factory, threshold_selector, importance_strategy=importance_strategy
-)
-result = trainer.train_and_evaluate(
-    X_train_best, y_train, X_test_best, y_test, best_features, model_params
-)
+    trainer = FinalModelTrainer(
+        model_factory, threshold_selector, importance_strategy=importance_strategy
+    )
+    result = trainer.train_and_evaluate(
+        X_train_best, y_train, X_test_best, y_test, best_features, model_params
+    )
 
-if cfg.mlflow.enabled:
-    mlflow.log_metrics(
+    ml_logger.log_metrics(
         {
             "test_roc_auc": result.test_roc_auc,
             "test_f1": result.test_f1,
@@ -205,28 +184,27 @@ if cfg.mlflow.enabled:
         }
     )
 
-feature_store = FeatureStore(root=cfg.output.features_path)
-feature_store.save(
-    name=f"{args.table}_{run_mode}",
-    features=best_features,
-    meta={
-        "table": args.table,
-        "run_mode": run_mode,
-        "cv_roc_auc": best_cv_result.mean_scores.get("roc_auc", 0),
-        "cv_roc_auc_std": best_cv_result.std_scores.get("roc_auc", 0),
-        "test_roc_auc": result.test_roc_auc,
-        "test_f1": result.test_f1,
-        "model_params": model_params,
-        "processing": cfg.processing.model_dump(),
-    },
-)
-logger.info(
-    f"Saved features to FeatureStore: {args.table}_{run_mode} ({len(best_features)} features)"
-)
-
-if cfg.mlflow.enabled:
-    import json
-    import tempfile
+    feature_store = FeatureStore(root=cfg.output.features_path)
+    feature_store.save(
+        name=f"{args.table}_{run_mode}",
+        features=best_features,
+        meta={
+            "table": args.table,
+            "run_mode": run_mode,
+            "cv_roc_auc": best_cv_result.mean_scores.get("roc_auc", 0),
+            "cv_roc_auc_std": best_cv_result.std_scores.get("roc_auc", 0),
+            "test_roc_auc": result.test_roc_auc,
+            "test_f1": result.test_f1,
+            "model_params": model_params,
+            "cleaner": cfg.cleaner.model_dump(),
+            "imputer": cfg.imputer.model_dump(),
+            "aggregator": cfg.aggregator.model_dump(),
+            "transformer": cfg.transformer.model_dump(),
+        },
+    )
+    logger.info(
+        f"Saved features to FeatureStore: {args.table}_{run_mode} ({len(best_features)} features)"
+    )
 
     features_data = {
         "table": args.table,
@@ -238,12 +216,10 @@ if cfg.mlflow.enabled:
     features_path = os.path.join(tempfile.gettempdir(), f"{args.table}_features.json")
     with open(features_path, "w") as f:
         json.dump(features_data, f, indent=2)
-    mlflow.log_artifact(features_path)
+    ml_logger.log_file_artifact(features_path)
 
-final_model = model_factory.create(**model_params)
-final_model.fit(X_train_best, y_train)
-if cfg.mlflow.enabled:
-    mlflow.sklearn.log_model(final_model, "model")
-    mlflow.end_run()
+    final_model = model_factory.create(**model_params)
+    final_model.fit(X_train_best, y_train)
+    ml_logger.log_model(final_model, "model")
 
 logger.info("Pipeline complete")

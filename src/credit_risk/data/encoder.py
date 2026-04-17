@@ -3,7 +3,7 @@
 import polars as pl
 from polars import DataFrame
 
-from credit_risk.config.settings import DataConfig
+from credit_risk.config import DataConfig
 
 
 class CategoricalEncoder:

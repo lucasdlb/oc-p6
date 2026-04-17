@@ -5,7 +5,7 @@ import pickle
 
 import polars as pl
 
-from credit_risk.config import cfg
+from credit_risk.config import load_config
 from credit_risk.data.cleaner import DataCleaner
 from credit_risk.data.encoder import CategoricalEncoder
 from credit_risk.data.loader import PLLazyDataLoader
@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--output", type=str, default="predictions.csv", help="Output file path")
     args = parser.parse_args()
 
+    cfg = load_config()
     logger = setup_logging()
     logger.info("Starting prediction")
 

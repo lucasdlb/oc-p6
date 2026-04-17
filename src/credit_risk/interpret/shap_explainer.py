@@ -11,9 +11,9 @@ from credit_risk.config import Config
 
 class ShapExplainer:
     def __init__(self, config: Config | None = None):
-        from credit_risk.config import cfg
+        from credit_risk.config import load_config
 
-        self.config = config or cfg
+        self.config = config or load_config()
         self.explainer: shap.Explainer | None = None
         self.expected_value: np.ndarray | None = None
 

@@ -284,9 +284,9 @@ class BureauBalanceAggregator(TableAggregator):
     """
 
     def __init__(self, config: FeaturesConfig | None = None) -> None:
-        from credit_risk.config import cfg
+        from credit_risk.config import load_config
 
-        self.config = config or cfg.data.features
+        self.config = config or load_config().data.features
 
     def _most_recent(self, df: LazyFrame) -> LazyFrame:
         """Extract most-recent-month DPD per SK_ID_BUREAU.

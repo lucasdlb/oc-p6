@@ -24,9 +24,9 @@ class DataAggregator:
         self,
         config: FeaturesConfig | None = None,
     ):
-        from credit_risk.config import cfg
+        from credit_risk.config import load_config
 
-        self.config = config or cfg.data.features
+        self.config = config or load_config().data.features
 
     def aggregate(
         self, df: LazyFrame, table: str = "bureau", method: str | None = None

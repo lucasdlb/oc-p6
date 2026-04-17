@@ -2,11 +2,12 @@
 
 import polars as pl
 
-from credit_risk.config import cfg
+from credit_risk.config import load_config
 from credit_risk.data.loader import TABLES_CSV_NAMES
 
 
 def audit_table_raw(name: str) -> dict[str, type]:
+    cfg = load_config()
     """Load a table WITHOUT schema overrides and find numeric columns read as string."""
     from credit_risk.config.config import PROJECT_ROOT
 

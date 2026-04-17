@@ -1,18 +1,17 @@
-"""Configuration loader and global config instance."""
+"""Configuration loader - each entrypoint calls load_config() explicitly."""
 
 from __future__ import annotations
 
 import os
 import tomllib
-from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from credit_risk.config.models import Config
+if TYPE_CHECKING:
+    from credit_risk.config.models import Config
 
 
 def _find_project_root() -> Path:
-    """Find project root by looking for pyproject.toml."""
     current = Path(__file__).resolve()
     for parent in [current] + list(current.parents):
         if (parent / "pyproject.toml").exists():
@@ -24,45 +23,46 @@ PROJECT_ROOT = _find_project_root()
 CONFIG_DIR = PROJECT_ROOT / "configs"
 
 
-@lru_cache
-def load_config() -> Config:
+def _read_toml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Config not found at {path}")
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def load_config(*enable: str) -> "Config":
     """Load configuration from TOML files.
 
-    Combines mode-specific config (debug/dev/prod.toml) with static data.toml.
+    Usage:
+        # Inference only - no optional steps
+        cfg = load_config()
 
-    Returns:
-        Config instance
+        # Training with specific optional configs
+        cfg = load_config("tuning", "selection")
 
-    Raises:
-        FileNotFoundError: If mode config not found
+        # Full pipeline with all optional steps
+        cfg = load_config("tuning", "selection", "resampling", "interpret", "importance")
+
+    The caller declares which optional configs are needed by name.
+    Values always come from the TOML files - the caller owns "shape", TOML owns "values".
     """
+    from credit_risk.config.models import Config
+
     mode = os.getenv("RUN_MODE", "prod")
+    raw = {
+        **_read_toml(CONFIG_DIR / f"{mode}.toml"),
+        **_read_toml(CONFIG_DIR / "data.toml"),
+    }
 
-    mode_path = CONFIG_DIR / f"{mode}.toml"
-    if not mode_path.exists():
-        raise FileNotFoundError(
-            f"No config found for mode '{mode}' at {mode_path}. Available modes: debug, dev, prod"
-        )
+    # Only populate optional configs that are explicitly enabled
+    # All others remain as None (not in raw dict)
+    optional = {"selection", "tuning", "resampling", "interpret", "importance", "model"}
+    enabled = set(enable)
 
-    with open(mode_path, "rb") as f:
-        mode_config = tomllib.load(f)
+    # For enabled configs, extract their section from raw and keep it
+    # For disabled configs, ensure they're not in raw (will use model defaults)
+    for field in optional:
+        if field not in enabled:
+            raw.pop(field, None)  # Remove so Config uses its default (None)
 
-    data_path = CONFIG_DIR / "data.toml"
-    with open(data_path, "rb") as f:
-        data_config = tomllib.load(f)
-
-    full_config: dict[str, Any] = {**mode_config, **data_config}
-
-    return Config(**full_config)
-
-
-cfg = load_config()
-
-
-def reload_config() -> Config:
-    """Reload configuration (clears cache).
-
-    Useful during testing or when config changes.
-    """
-    load_config.cache_clear()
-    return load_config()
+    return Config(**raw)

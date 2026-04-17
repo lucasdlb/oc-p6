@@ -1,53 +1,57 @@
 """Configuration package.
 
-Exports:
-  - cfg: Global Config instance
-  - Config: Pydantic model for config validation
-  - load_config(): Function to load/reload config
-  - ConfigGrid: For hyperparameter sweeps
+Usage:
+    # Inference only - no optional steps
+    from credit_risk.config import load_config
+    cfg = load_config()
+
+    # Training with optional configs - just declare which ones you need
+    cfg = load_config("tuning", "selection")
+
+    # Full pipeline
+    cfg = load_config("tuning", "selection", "resampling", "interpret", "importance")
 """
 
 from __future__ import annotations
 
-from credit_risk.config.config import cfg, load_config, reload_config
+from credit_risk.config.config import load_config
 from credit_risk.config.config_grid import ConfigGrid
 from credit_risk.config.models import (
     AggregationConfig,
+    CleanerConfig,
     Config,
     DataConfig,
     FeaturesConfig,
     ImportanceConfig,
+    ImputerConfig,
     InterpretConfig,
-    MLFlowConfig,
     ModelConfig,
-    ProcessingConfig,
+    ResamplingConfig,
     RunConfig,
-    SearchConfig,
     SelectionConfig,
     SplitterConfig,
+    TransformerConfig,
     TuningConfig,
 )
 
 __all__ = [
-    # Global config
-    "cfg",
     "load_config",
-    "reload_config",
-    # Config models
+    "ConfigGrid",
     "Config",
     "RunConfig",
     "SplitterConfig",
     "ModelConfig",
     "SelectionConfig",
     "ImportanceConfig",
-    "MLFlowConfig",
     "InterpretConfig",
-    "SearchConfig",
     "TuningConfig",
     "DataConfig",
     "FeaturesConfig",
     "AggregationConfig",
-    "ProcessingConfig",
-    # Hyperparameter sweeps
-    "ConfigGrid",
+    "ResamplingConfig",
+    # Processing step configs
+    "CleanerConfig",
+    "ImputerConfig",
+    "AggregatorConfig",
+    "TransformerConfig",
 ]

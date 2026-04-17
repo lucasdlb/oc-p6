@@ -1,5 +1,4 @@
 # Debug mode - fast execution with small sample
-# Usage: RUN_MODE=debug uv run python scripts/rfe_cv_all.py
 
 [run]
 mode = "debug"
@@ -24,29 +23,17 @@ n_jobs = -1
 class_weight = "balanced"
 verbose = -1
 
-[processing]
-cleaning = "default"
-imputation = "default"
-aggregation = "detailed"
-encoding = "onehot"
-
-[resampling]
-enabled = false
-method = "smote"  # smote, over (oversample), under (undersample), none
-sampling_strategy = "minority"
-k_neighbors = 5
-random_state = 42
+[selection]
+min_features = 20
+tolerance = 0.005
+nb_remove_features = 0.3
 
 [importance]
 method = "inner"
 
-[mlflow]
-enabled = true
-experiment_name = "debug"
-
-[search]
-preset = "debug"
-max_grid_values = 1
+[interpret]
+shap_background_samples = 100
+shap_n_samples = 50
 
 [tuning]
 n_trials = 2
@@ -55,4 +42,23 @@ study_name = "debug_tuning"
 direction = "maximize"
 n_jobs = 1
 pruner = "median"
-models = ["lgbm", "random_forest", "hist_gbm", "lr"]
+models = ["lgbm"]
+
+[resampling]
+enabled = false
+method = "smote"
+sampling_strategy = "minority"
+k_neighbors = 5
+random_state = 42
+
+[cleaner]
+method = "default"
+
+[imputer]
+method = "default"
+
+[aggregator]
+method = "detailed"
+
+[transformer]
+encoding = "onehot"

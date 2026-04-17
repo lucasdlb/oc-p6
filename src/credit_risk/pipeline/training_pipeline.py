@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from polars import DataFrame
 
-from credit_risk.config import Config, DataSourcesConfig, cfg
+from credit_risk.config import Config, DataSourcesConfig, load_config
 from credit_risk.data.cleaner import DataCleaner
 from credit_risk.data.encoder import CategoricalEncoder
 from credit_risk.data.imputer import DataImputer
@@ -23,7 +23,7 @@ class TrainingPipeline:
         settings: Config | None = None,
         data_sources: DataSourcesConfig | None = None,
     ):
-        self.settings = settings or cfg
+        self.settings = settings or load_config()
         self.data_sources = data_sources or DataSourcesConfig()
         self.loader = PLLazyDataLoader()
         self.cleaner = DataCleaner(self.settings.data, self.data_sources)

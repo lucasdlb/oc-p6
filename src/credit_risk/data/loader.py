@@ -12,8 +12,6 @@ import polars as pl
 if TYPE_CHECKING:
     import pandas as pd
 
-from credit_risk.config import cfg
-
 logger = logging.getLogger(__name__)
 
 TABLE_NAMES = Literal[
@@ -29,17 +27,34 @@ TABLE_NAMES = Literal[
 ]
 
 
-TABLES_CSV_NAMES: dict[str, str] = {
-    "application": cfg.data.sources.application,
-    "application_test": "application_test.csv",
-    "bureau": cfg.data.sources.bureau,
-    "bureau_balance": cfg.data.sources.bureau_balance,
-    "previous_application": cfg.data.sources.previous_application,
-    "pos_cash_balance": cfg.data.sources.pos_cash,
-    "credit_card_balance": cfg.data.sources.credit_card,
-    "installments_payments": cfg.data.sources.installments,
-    "sample_submission": "sample_submission.csv",
-}
+def get_table_csv_names() -> dict[str, str]:
+    """Get table CSV names from config (lazy, not at import time)."""
+    from credit_risk.config import load_config
+
+    cfg = load_config()
+    return {
+        "application": cfg.data.sources.application,
+        "application_test": "application_test.csv",
+        "bureau": cfg.data.sources.bureau,
+        "bureau_balance": cfg.data.sources.bureau_balance,
+        "previous_application": cfg.data.sources.previous_application,
+        "pos_cash_balance": cfg.data.sources.pos_cash,
+        "credit_card_balance": cfg.data.sources.credit_card,
+        "installments_payments": cfg.data.sources.installments,
+        "sample_submission": "sample_submission.csv",
+    }
+
+
+# Populated lazily on first access
+_tables_csv_names: dict[str, str] | None = None
+
+
+def _get_tables_csv_names() -> dict[str, str]:
+    global _tables_csv_names
+    if _tables_csv_names is None:
+        _tables_csv_names = get_table_csv_names()
+    return _tables_csv_names
+
 
 # Known schema overrides per table — from audit script.
 KNOWN_SCHEMA_OVERRIDES: dict[str, dict[str, type[pl.DataType]]] = {
@@ -66,6 +81,10 @@ class BaseDataLoader(ABC):
     """
 
     def __init__(self, data_path: Path | None = None) -> None:
+        from credit_risk.config import load_config
+
+        cfg = load_config()
+
         from credit_risk.config.config import PROJECT_ROOT
 
         default_path = PROJECT_ROOT / cfg.data.data_dir
@@ -79,14 +98,15 @@ class BaseDataLoader(ABC):
     @staticmethod
     def available_tables() -> list[str]:
         """Return the list of supported table names."""
-        return list(TABLES_CSV_NAMES)
+        return list(_get_tables_csv_names())
 
     def table_path(self, name: str) -> Path:
         """Resolve the CSV path for a given table name."""
-        if name not in TABLES_CSV_NAMES:
-            msg = f"Unknown table {name!r}. Available: {list(TABLES_CSV_NAMES)}"
+        tables = _get_tables_csv_names()
+        if name not in tables:
+            msg = f"Unknown table {name!r}. Available: {list(tables)}"
             raise ValueError(msg)
-        return self._data_path / TABLES_CSV_NAMES[name]
+        return self._data_path / tables[name]
 
     @abstractmethod
     def _read_csv(
@@ -162,6 +182,7 @@ class BaseDataLoader(ABC):
     def load_labels(self) -> pl.LazyFrame:
         """Load SK_ID_CURR and TARGET columns as lazy frame."""
         return self.load("application").select(["SK_ID_CURR", "TARGET"]).lazy()
+
 
 class PLDataLoader(BaseDataLoader):
     """Polars eager data loader."""
