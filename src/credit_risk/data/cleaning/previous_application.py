@@ -43,9 +43,7 @@ class PreviousApplicationCleaner(TableCleaner):
         # --- APP_CREDIT_PERC: ratio credit/goods, physically bounded ---
         if "APP_CREDIT_PERC" in df.columns:
             exprs.append(
-                pl.when(
-                    (pl.col("APP_CREDIT_PERC") <= 0) | (pl.col("APP_CREDIT_PERC") > 10)
-                )
+                pl.when((pl.col("APP_CREDIT_PERC") <= 0) | (pl.col("APP_CREDIT_PERC") > 10))
                 .then(pl.lit(None))
                 .otherwise(pl.col("APP_CREDIT_PERC"))
                 .alias("APP_CREDIT_PERC")

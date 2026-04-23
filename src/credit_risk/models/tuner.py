@@ -16,8 +16,9 @@ from credit_risk.models.param_spaces import _SUGGEST_FN, suggest_params
 from credit_risk.models.splitter import Splitter
 
 if TYPE_CHECKING:
-    from credit_risk.models.model_factory import EstimatorPipelineFactory, ModelFactory
     from sklearn.base import BaseEstimator
+
+    from credit_risk.models.model_factory import ModelFactory
 
 logger = logging.getLogger(__name__)
 

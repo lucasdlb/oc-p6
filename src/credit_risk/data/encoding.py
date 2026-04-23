@@ -9,13 +9,9 @@ import polars as pl
 """One-hot encoder with null and rare-category handling."""
 
 
-from dataclasses import dataclass, field
-
-import polars as pl
-
-
 _MISSING = "__missing__"
 _RARE = "__rare__"
+
 
 @dataclass
 class CategoricalEncoder:
@@ -110,8 +106,6 @@ class CategoricalEncoder:
         return report
 
 
-
-
 @dataclass
 class PolarsOneHotEncoder:
     """One-hot encoder using Polars native operations.
@@ -173,8 +167,7 @@ class PolarsOneHotEncoder:
 
             # After
             counts: dict[str, int] = {
-                row[col]: row["count"]
-                for row in non_null.value_counts(sort=False).to_dicts()
+                row[col]: row["count"] for row in non_null.value_counts(sort=False).to_dicts()
             }
 
             # Build final category list: __missing__ first (if any nulls),
@@ -305,8 +298,4 @@ class PolarsOneHotEncoder:
 
     def feature_names_out(self) -> list[str]:
         """Return all output column names in fit order."""
-        return [
-            f"{col}_{cat}"
-            for col, cats in self._categories.items()
-            for cat in cats
-        ]
+        return [f"{col}_{cat}" for col, cats in self._categories.items() for cat in cats]

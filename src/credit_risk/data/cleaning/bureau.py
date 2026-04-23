@@ -57,10 +57,7 @@ class BureauCleaner(TableCleaner):
         for col in self._AMT_COLS:
             if col in df.columns:
                 exprs.append(
-                    pl.when(pl.col(col) < 0)
-                    .then(pl.lit(None))
-                    .otherwise(pl.col(col))
-                    .alias(col)
+                    pl.when(pl.col(col) < 0).then(pl.lit(None)).otherwise(pl.col(col)).alias(col)
                 )
 
         # --- CREDIT_DAY_OVERDUE: negative makes no sense → null ---

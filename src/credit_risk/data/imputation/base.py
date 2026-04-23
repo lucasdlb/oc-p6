@@ -5,11 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Protocol, runtime_checkable
 
-import pandas as pd
 import polars as pl
 from lightgbm import LGBMRegressor
 from polars import DataFrame
-from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
 logger = logging.getLogger(__name__)

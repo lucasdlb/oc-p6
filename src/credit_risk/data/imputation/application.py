@@ -6,11 +6,9 @@ import pandas as pd
 import polars as pl
 from lightgbm import LGBMRegressor
 from polars import DataFrame
-
+from sklearn.impute import IterativeImputer
 
 from credit_risk.data.imputation.base import TableImputer
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
 
 APARTMENT_COLS = [
     "APARTMENTS_AVG",
@@ -106,7 +104,8 @@ class ApplicationImputer(TableImputer):
         df = df.drop(APARTMENT_COLS)
 
         int_cols = {
-            col: dtype for col, dtype in zip(df.columns, df.dtypes)
+            col: dtype
+            for col, dtype in zip(df.columns, df.dtypes)
             if dtype in (pl.Int32, pl.Int64, pl.UInt32, pl.UInt64)
         }
 
@@ -139,10 +138,9 @@ class ApplicationImputer(TableImputer):
         )
         pdf[num_cols] = imp.fit_transform(pdf[num_cols])
 
-        df = pl.from_pandas(pdf).with_columns([
-            pl.col(col).cast(dtype)
-            for col, dtype in int_cols.items()
-        ])
+        df = pl.from_pandas(pdf).with_columns(
+            [pl.col(col).cast(dtype) for col, dtype in int_cols.items()]
+        )
         return df
 
     def _impute_own_car_age(self, df: DataFrame) -> DataFrame:

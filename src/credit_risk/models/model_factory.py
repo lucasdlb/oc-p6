@@ -62,6 +62,7 @@ class EstimatorPipeline(Pipeline):
         result = super().predict_proba(X, **params)
         if result.max() > 1.0 or result.min() < 0.0:
             from scipy.special import expit
+
             result = expit(result)
         return result[:, 1]
 

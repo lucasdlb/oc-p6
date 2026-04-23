@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from polars import DataFrame
 import polars as pl
+from polars import DataFrame
 
 from credit_risk.data.cleaning.base import TableCleaner
+
 
 class POSCashCleaner(TableCleaner):
     """Cleaner for POS_CASH_balance table.

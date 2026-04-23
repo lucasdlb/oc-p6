@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from credit_risk.models.metrics import ClassificationMetrics, ClassificationRankingMetrics
-from credit_risk.models.splitter import Splitter
-
 from credit_risk.models.model_factory import ModelFactory
+from credit_risk.models.splitter import Splitter
 
 if TYPE_CHECKING:
     from credit_risk.models.importance.base import BaseImportanceStrategy
-    from credit_risk.models.model_factory import EstimatorPipelineFactory
 
 logger = logging.getLogger(__name__)
 

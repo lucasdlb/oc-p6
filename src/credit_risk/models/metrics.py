@@ -160,7 +160,17 @@ class ClassificationMetrics:
         assert self.ranking is not None
         ranking_names = self.ranking.names()
         threshold_names = [
-            n for n in ("f1", "recall", "precision", "accuracy", "specificity", "npv", "balanced_accuracy", "mcc")
+            n
+            for n in (
+                "f1",
+                "recall",
+                "precision",
+                "accuracy",
+                "specificity",
+                "npv",
+                "balanced_accuracy",
+                "mcc",
+            )
             if getattr(self, n)
         ]
         return ranking_names + threshold_names
