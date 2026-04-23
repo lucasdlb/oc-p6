@@ -1,0 +1,209 @@
+{
+  "run": {
+    "mode": "debug",
+    "sample_fraction": 0.05,
+    "random_state": 42
+  },
+  "splitter": {
+    "test_size": 0.8,
+    "n_splits": 2,
+    "random_state": 42
+  },
+  "data": {
+    "data_dir": "data",
+    "output_dir": "output",
+    "target": {
+      "column": "TARGET",
+      "id_column": "SK_ID_CURR"
+    },
+    "sources": {
+      "application": "application_train.csv",
+      "bureau": "bureau.csv",
+      "bureau_balance": "bureau_balance.csv",
+      "previous_application": "previous_application.csv",
+      "pos_cash": "POS_CASH_balance.csv",
+      "installments": "installments_payments.csv",
+      "credit_card": "credit_card_balance.csv"
+    },
+    "features": {
+      "drop_always": [
+        "SK_ID_CURR",
+        "SK_ID_BUREAU",
+        "SK_ID_PREV"
+      ],
+      "categorical": [
+        "NAME_CONTRACT_TYPE",
+        "CODE_GENDER",
+        "FLAG_OWN_CAR",
+        "FLAG_OWN_REALTY",
+        "NAME_INCOME_TYPE",
+        "NAME_EDUCATION_TYPE",
+        "NAME_FAMILY_STATUS",
+        "NAME_HOUSING_TYPE",
+        "WEEKDAY_APPR_PROCESS_START",
+        "FONKAPARTNER_MODE",
+        "EMERGENCYSTATE_MODE",
+        "WALLSMATERIAL_MODE",
+        "HOUSETYPE_MODE"
+      ],
+      "ext_source": [
+        "EXT_SOURCE_1",
+        "EXT_SOURCE_2",
+        "EXT_SOURCE_3"
+      ],
+      "bureau_agg_features": [
+        "DAYS_CREDIT",
+        "CREDIT_DAY_OVERDUE",
+        "CNT_CREDIT_PROLONG",
+        "AMT_CREDIT_SUM_OVERDUE",
+        "AMT_CREDIT_SUM",
+        "AMT_ANNUITY"
+      ],
+      "previous_app_agg_features": [
+        "AMT_ANNUITY",
+        "AMT_APPLICATION",
+        "AMT_CREDIT",
+        "AMT_DOWN_PAYMENT",
+        "DAYS_DECISION",
+        "CNT_PAYMENT"
+      ],
+      "installments_agg_features": [
+        "NUM_INSTALMENT_NUMBER",
+        "NUM_INSTALMENT_VERSION",
+        "AMT_INSTALMENT",
+        "AMT_PAYMENT"
+      ],
+      "pos_cash_agg_features": [
+        "MONTHS_BALANCE",
+        "CNT_INSTALMENT",
+        "CNT_INSTALMENT_FUTURE",
+        "SK_DPD",
+        "SK_DPD_DEF"
+      ],
+      "credit_card_agg_features": [
+        "MONTHS_BALANCE",
+        "AMT_BALANCE",
+        "AMT_CREDIT_LIMIT_ACTUAL",
+        "AMT_DRAWINGS_ATM_CURRENT",
+        "AMT_DRAWINGS_CURRENT",
+        "AMT_PAYMENT_CURRENT",
+        "CNT_INSTALMENT_MATURE_CUM",
+        "SK_DPD",
+        "SK_DPD_DEF"
+      ],
+      "bureau_balance_agg_features": [
+        "MONTHS_BALANCE",
+        "STATUS"
+      ]
+    },
+    "bureau": {
+      "include": true,
+      "features": [
+        "DAYS_CREDIT",
+        "CREDIT_DAY_OVERDUE",
+        "CNT_CREDIT_PROLONG",
+        "AMT_CREDIT_SUM_OVERDUE",
+        "AMT_CREDIT_SUM",
+        "AMT_ANNUITY"
+      ]
+    },
+    "bureau_balance": {
+      "include": true,
+      "features": [
+        "MONTHS_BALANCE",
+        "STATUS"
+      ]
+    },
+    "previous_application": {
+      "include": true,
+      "features": [
+        "AMT_ANNUITY",
+        "AMT_APPLICATION",
+        "AMT_CREDIT",
+        "AMT_DOWN_PAYMENT",
+        "DAYS_DECISION",
+        "CNT_PAYMENT"
+      ]
+    },
+    "pos_cash": {
+      "include": true,
+      "features": [
+        "MONTHS_BALANCE",
+        "CNT_INSTALMENT",
+        "CNT_INSTALMENT_FUTURE",
+        "SK_DPD",
+        "SK_DPD_DEF"
+      ]
+    },
+    "installments": {
+      "include": true,
+      "features": [
+        "NUM_INSTALMENT_NUMBER",
+        "NUM_INSTALMENT_VERSION",
+        "AMT_INSTALMENT",
+        "AMT_PAYMENT"
+      ]
+    },
+    "credit_card": {
+      "include": true,
+      "features": [
+        "MONTHS_BALANCE",
+        "AMT_BALANCE",
+        "AMT_CREDIT_LIMIT_ACTUAL",
+        "AMT_DRAWINGS_ATM_CURRENT",
+        "AMT_DRAWINGS_CURRENT",
+        "AMT_PAYMENT_CURRENT",
+        "CNT_INSTALMENT_MATURE_CUM",
+        "SK_DPD",
+        "SK_DPD_DEF"
+      ]
+    },
+    "cleaner": {
+      "method": "default"
+    },
+    "imputer": {
+      "method": "default"
+    }
+  },
+  "output": {
+    "output_models_dir": "models",
+    "output_features_dir": "artifacts/features",
+    "output_mlflow_db": "mlflow.db",
+    "output_mlflow_db_type": "sqlite"
+  },
+  "cleaner": {
+    "method": "default"
+  },
+  "imputer": {
+    "method": "default"
+  },
+  "aggregator": {
+    "method": "detailed"
+  },
+  "transformer": {
+    "encoding": "onehot"
+  },
+  "model": {
+    "model_type": "lgbm",
+    "x_transform": "none",
+    "params": {
+      "max_depth": 3,
+      "n_estimators": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 31,
+      "min_child_samples": 20,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.1,
+      "reg_lambda": 0.1,
+      "n_jobs": -1,
+      "class_weight": "balanced",
+      "verbose": -1
+    }
+  },
+  "selection": null,
+  "tuning": null,
+  "resampling": null,
+  "interpret": null,
+  "importance": null
+}
