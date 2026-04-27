@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Iterator, Protocol
 
 import numpy as np
 
 __all__ = ["Splitter", "TrainTestCVSplitter"]
+
+from credit_risk.config import Config
 
 
 class Splitter(Protocol):
@@ -60,23 +63,33 @@ class TrainTestCVSplitter(Splitter):
     Attributes:
         test_size: Proportion of data for test set (0.0 to 1.0)
         n_splits: Number of folds for CV
-        random_state: Random seed
+        cv_random_state: Random seed
         stratify: Whether to stratify splits by target
     """
 
     test_size: float = 0.2
     n_splits: int = 5
-    random_state: int = 42
+    cv_random_state: int = 42
+    test_random_state: int = 42
     stratify: bool = True
+    shuffle: bool = True
 
     def __post_init__(self) -> None:
-        from sklearn.model_selection import StratifiedKFold
+        from sklearn.model_selection import StratifiedKFold, train_test_split
 
         self._cv_splitter = StratifiedKFold(
             n_splits=self.n_splits,
-            shuffle=True,
-            random_state=self.random_state,
+            shuffle=self.shuffle,
+            random_state=self.cv_random_state,
         )
+
+        self._train_test_cv_splitter = partial(
+            train_test_split,
+            test_size=self.test_size,
+            shuffle=self.shuffle,
+            random_state=self.test_random_state,
+        )
+
         self._resampler = None
 
     def set_resampler(self, resampler: Any) -> None:
@@ -99,45 +112,16 @@ class TrainTestCVSplitter(Splitter):
         Returns:
             Tuple of (X_train, X_test, y_train, y_test)
         """
-        rng = np.random.default_rng(self.random_state)
-        n_samples = len(y)
-
-        if self.stratify:
-            # Stratified split
-            unique_classes, class_indices = np.unique(y, return_inverse=True)
-            train_indices = []
-            test_indices = []
-
-            for c in unique_classes:
-                class_mask = class_indices == c
-                class_indices_orig = np.where(class_mask)[0]
-                rng.shuffle(class_indices_orig)
-
-                n_test = int(len(class_indices_orig) * self.test_size)
-                test_indices.extend(class_indices_orig[:n_test])
-                train_indices.extend(class_indices_orig[n_test:])
-
-            train_idx = np.array(train_indices)
-            test_idx = np.array(test_indices)
-        else:
-            # Simple random split
-            indices = rng.permutation(n_samples)
-            n_test = int(n_samples * self.test_size)
-            test_idx = indices[:n_test]
-            train_idx = indices[n_test:]
-
-        X_train = X[train_idx]
-        y_train = y[train_idx]
+        X_train, X_test, y_train, y_test = self._train_test_cv_splitter(
+            X,
+            y,
+            stratify=y if self.stratify else None,
+        )
 
         if self._resampler is not None:
             X_train, y_train = self._resampler.fit_resample(X_train, y_train)
 
-        return (
-            X_train,
-            X[test_idx],
-            y_train,
-            y[test_idx],
-        )
+        return X_train, X_test, y_train, y_test
 
     def split_cv(self, X: np.ndarray, y: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Create CV folds on training data only.
@@ -150,3 +134,14 @@ class TrainTestCVSplitter(Splitter):
             Tuples of (train_indices, val_indices) for each fold
         """
         return self._cv_splitter.split(X, y)
+
+    @classmethod
+    def from_config(cls, cfg: Config) -> TrainTestCVSplitter:
+        return TrainTestCVSplitter(
+            test_size=cfg.splitter.test_size,
+            n_splits=cfg.splitter.n_splits,
+            cv_random_state=cfg.splitter.cv_random_state,
+            test_random_state=cfg.splitter.test_random_state,
+            stratify=cfg.splitter.stratify,
+            shuffle=cfg.splitter.shuffle,
+        )

@@ -15,19 +15,17 @@ import argparse
 import logging
 import warnings
 
-import numpy as np
 import polars as pl
-from sklearn.model_selection import StratifiedKFold
 
 from credit_risk.config import load_config
-from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.imputer import DataImputer
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.features.aggregator import DataAggregator
-from credit_risk.features.transformer import DataTransformer
 from credit_risk.mlflow_utils import MlflowLogger
-from credit_risk.models.cross_validator import CrossValidator, LGBMFactory
+from credit_risk.models.cross_validator import CVMetrics
 from credit_risk.models.metrics import ClassificationRankingMetrics
+from credit_risk.models.model_factory import get_factory
+from credit_risk.models.splitter import TrainTestCVSplitter
+from credit_risk.pipeline.cv_pipeline import ProcessingCV
+from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -39,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def main(config=None):
-    cfg = config or load_config("selection")
+    cfg = config or load_config("selection", "model")
     ml_logger = MlflowLogger()
 
     parser = argparse.ArgumentParser(description="Run CV experiment on a single table")
@@ -53,110 +51,69 @@ def main(config=None):
     with ml_logger.start_run(run_name=f"{run_mode}_{table}"):
         ml_logger.log_flat_config(cfg)
 
+        splitter = TrainTestCVSplitter.from_config(cfg=cfg)
+
         sample_frac = cfg.run.sample_fraction
 
-        logger.info("Loading data...")
         loader = PLLazyDataLoader()
         labels = loader.load_labels()
+
+        labels_df = labels.collect()
+        ids = labels_df.select(cfg.data.target.id_column).to_numpy().ravel()
+        y = labels_df.select(cfg.data.target.column).to_numpy().ravel()
+
+        ids_train, _, _, _ = splitter.split_train_test(ids, y)
+        labels_df = labels_df.filter(pl.col(cfg.data.target.id_column).is_in(ids_train))
+
         if sample_frac < 1.0:
             logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
-            labels = labels.collect().sample(fraction=sample_frac, seed=cfg.run.random_state).lazy()
+            labels_df = labels_df.sample(fraction=sample_frac, seed=cfg.run.random_state)
 
-        df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
-        df = df.collect()
+        logger.info("Loading data...")
+        table_raw = loader.load(table).collect()
 
-        logger.info(f"{table}: {df.height} rows, {df.width} cols")
+        tables = {table: table_raw}
 
-        cleaner = DataCleaner()
-        imputer = DataImputer()
-        aggregator = DataAggregator()
-        transformer = DataTransformer()
-
-        df = cleaner.clean(df, table, method=cfg.cleaner.method)
-        df = imputer.impute(df, table, method=cfg.imputer.method)
-        df = aggregator.aggregate(df.lazy(), table, method=cfg.aggregator.method).collect()
-        df = transformer.transform(df, table=table, encoding=cfg.transformer.encoding)
-
-        target_col = cfg.data.target.column
-        id_col = cfg.data.target.id_column
-
-        # Handle TARGET column renamed during join - extract before dropping
-        y = None
-        if target_col not in df.columns and "TARGET_right" in df.columns:
-            y = df.select("TARGET_right").to_numpy().ravel()
-            df = df.drop("TARGET_right")
-        elif target_col in df.columns:
-            y = df.select(target_col).to_numpy().ravel()
-            df = df.drop(target_col)
-
-        # Drop any suffix columns from joins
-        suffix_cols = [c for c in df.columns if c.endswith("_right")]
-        if suffix_cols:
-            df = df.drop(suffix_cols)
-
-        # Exclude string columns if encoding is none
-        if cfg.transformer.encoding == "none":
-            feature_cols = [
-                c
-                for c in df.columns
-                if c not in [id_col, "SK_ID_BUREAU", "SK_ID_PREV", "TARGET_right"]
-                and df.schema[c] != pl.String
-            ]
-        else:
-            feature_cols = [
-                c
-                for c in df.columns
-                if c not in [id_col, "SK_ID_BUREAU", "SK_ID_PREV", "TARGET_right"]
-            ]
-        logger.info(f"Using {len(feature_cols)} features")
-
-        X = df.select(feature_cols).to_pandas()
-
-        X = X.to_numpy(dtype=np.float64)
-
-        logger.info(f"Data shape: {X.shape}, Features: {len(feature_cols)}")
-
-        skf = StratifiedKFold(
-            n_splits=cfg.splitter.n_splits, shuffle=True, random_state=cfg.splitter.random_state
+        cv = ProcessingCV(
+            pipeline_factories={
+                t: lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)) for t in tables
+            },
+            splitter=splitter,
+            model_factory=get_factory(cfg.model.model_type, cfg.model.x_transform),
         )
-        metrics = ClassificationRankingMetrics(roc_auc=True)
-        factory = LGBMFactory()
 
         logger.info(f"Running {cfg.splitter.n_splits}-fold cross-validation...")
 
-        validator = CrossValidator(
-            splitter=skf,
-            metrics=metrics,
-            model_factory=factory,
+        result = cv.validate(
+            tables=tables,
+            labels=labels_df,
+            model_params=cfg.model.params,
         )
 
-        model_params = cfg.model.model_dump()
-        model_params["verbose"] = -1
+        scores = CVMetrics.compute(result, ClassificationRankingMetrics())
 
-        result = validator.validate(X, y, model_params=model_params)
-
+        n_features = result.n_features
         logger.info("=" * 60)
-        logger.info(f"CV Results ({cfg.splitter.n_splits} folds, {len(feature_cols)} features):")
-        logger.info(
-            f"  ROC AUC: {result.mean_scores['roc_auc']:.4f} ± {result.std_scores['roc_auc']:.4f}"
-        )
-        logger.info("=" * 60)
+        logger.info(f"CV Results ({cfg.splitter.n_splits} folds, {n_features} features):")
+        auc_mean = scores.mean_scores["roc_auc"]
+        auc_std = scores.std_scores["roc_auc"]
+        logger.info(f"  ROC AUC: {auc_mean:.4f} ± {auc_std:.4f}")
 
-        for fold_idx, fold_score in enumerate(result.fold_scores):
+        for fold_idx, fold_score in enumerate(scores.fold_scores):
             logger.info(f"Fold {fold_idx + 1}: ROC AUC = {fold_score['roc_auc']:.4f}")
 
         ml_logger.log_metrics(
             {
-                "cv_roc_auc": result.mean_scores["roc_auc"],
-                "cv_roc_auc_std": result.std_scores["roc_auc"],
+                "cv_roc_auc": auc_mean,
+                "cv_roc_auc_std": auc_std,
                 "n_folds": cfg.splitter.n_splits,
-                "n_features": len(feature_cols),
+                "n_features": n_features,
             }
         )
 
         logger.info("Experiment complete")
 
-        return result.mean_scores["roc_auc"]
+        return auc_mean
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 # Prod mode - full execution
-# Usage: uv run python scripts/rfe_cv_all.py (defaults to prod)
 
 [run]
 mode = "prod"
@@ -9,9 +8,16 @@ random_state = 42
 [splitter]
 test_size = 0.2
 n_splits = 5
-random_state = 42
+cv_random_state = 42
+test_random_state = 42
+stratify = true
+shuffle = true
 
 [model]
+model_type = "lgbm"
+x_transform = "none"
+
+[model.params]
 max_depth = 5
 n_estimators = 500
 learning_rate = 0.02
@@ -42,22 +48,8 @@ n_jobs = 1
 pruner = "median"
 models = [
     "lgbm",
-#    "random_forest",
     "hist_gbm",
-#    "lr"
 ]
-
-[cleaner]
-method = "default"
-
-[imputer]
-method = "default"
-
-[aggregator]
-method = "detailed"
-
-[transformer]
-encoding = "onehot"
 
 [resampling]
 enabled = false

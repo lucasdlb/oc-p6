@@ -1,5 +1,4 @@
 # Dev mode - moderate execution
-# Usage: RUN_MODE=dev uv run python scripts/rfe_cv_all.py
 
 [run]
 mode = "dev"
@@ -9,9 +8,16 @@ random_state = 42
 [splitter]
 test_size = 0.2
 n_splits = 3
-random_state = 42
+cv_random_state = 42
+test_random_state = 42
+stratify = true
+shuffle = true
 
 [model]
+model_type = "lgbm"
+x_transform = "none"
+
+[model.params]
 max_depth = 13
 n_estimators = 1628
 learning_rate = 0.010693009871179241
@@ -48,22 +54,8 @@ n_jobs = 1
 pruner = "median"
 models = [
     "lgbm",
-#    "random_forest",
     "hist_gbm",
-#    "lr"
 ]
-
-[cleaner]
-method = "default"
-
-[imputer]
-method = "default"
-
-[aggregator]
-method = "detailed"
-
-[transformer]
-encoding = "onehot"
 
 [resampling]
 enabled = false

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -33,24 +33,18 @@ class SplitterConfig(BaseModel):
 
     test_size: float = Field(ge=0.0, le=1.0, default=0.2)
     n_splits: int = Field(gt=0, default=5)
-    random_state: int = Field(default=42)
+    cv_random_state: int = Field(default=42)
+    test_random_state: int = Field(default=42)
+    stratify: bool = Field(default=True)
+    shuffle: bool = Field(default=True)
 
 
 class ModelConfig(BaseModel):
     """Model hyperparameters configuration."""
 
-    max_depth: int = Field(gt=0)
-    n_estimators: int = Field(gt=0)
-    learning_rate: float = Field(gt=0)
-    num_leaves: int = Field(gt=0)
-    min_child_samples: int = Field(gt=0)
-    subsample: float = Field(ge=0.0, le=1.0)
-    colsample_bytree: float = Field(ge=0.0, le=1.0)
-    reg_alpha: float
-    reg_lambda: float
-    n_jobs: int
-    class_weight: str
-    verbose: int
+    model_type: str
+    x_transform: str = "none"
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class SelectionConfig(BaseModel):
@@ -161,30 +155,6 @@ class ResamplingConfig(BaseModel):
         return cls(**data.get("resampling", {}))
 
 
-class CleanerConfig(BaseModel):
-    """Configuration for data cleaning step."""
-
-    method: str = "default"
-
-
-class ImputerConfig(BaseModel):
-    """Configuration for data imputation step."""
-
-    method: str = "default"
-
-
-class AggregatorConfig(BaseModel):
-    """Configuration for feature aggregation step."""
-
-    method: str = "detailed"
-
-
-class TransformerConfig(BaseModel):
-    """Configuration for feature transformation step."""
-
-    encoding: Literal["onehot", "label", "none"] = "onehot"
-
-
 class OutputConfig(BaseModel):
     """Output paths for artifacts, models, mlflow."""
 
@@ -210,7 +180,6 @@ class OutputConfig(BaseModel):
         if self.mlflow_db_type == "sqlite":
             return f"sqlite:///{self.mlflow_db_path}"
         elif self.mlflow_db_type == "postgresql":
-            # For postgresql, expects db name in mlflow_db field
             return f"postgresql:///{self.mlflow_db}"
         elif self.mlflow_db_type == "mysql":
             return f"mysql:///{self.mlflow_db}"
@@ -260,11 +229,19 @@ class FeaturesConfig(BaseModel):
     bureau_balance_agg_features: list[str] = Field(default_factory=list)
 
 
-class AggregationConfig(BaseModel):
-    """Aggregation configuration for a table."""
+class TableConfig(BaseModel):
+    """Configuration for a single table's processing steps.
+
+    Each table specifies which class implements each step.
+    The composite resolves the class name from the appropriate registry.
+    """
 
     include: bool = True
-    features: list[str] = Field(default_factory=list)
+    cleaner: str = "RawCleaner"
+    imputer: str = "RawImputer"
+    aggregator: str = "NoOpAggregator"
+    transformer: str = "ApplicationTransformer"
+    encoder: str = "PolarsOneHotEncoder"
 
 
 class DataConfig(BaseModel):
@@ -276,12 +253,13 @@ class DataConfig(BaseModel):
     sources: DataSourceFiles = Field(default_factory=DataSourceFiles)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
 
-    bureau: AggregationConfig = Field(default_factory=AggregationConfig)
-    bureau_balance: AggregationConfig = Field(default_factory=AggregationConfig)
-    previous_application: AggregationConfig = Field(default_factory=AggregationConfig)
-    pos_cash: AggregationConfig = Field(default_factory=AggregationConfig)
-    installments: AggregationConfig = Field(default_factory=AggregationConfig)
-    credit_card: AggregationConfig = Field(default_factory=AggregationConfig)
+    application: TableConfig = Field(default_factory=TableConfig)
+    bureau: TableConfig = Field(default_factory=TableConfig)
+    bureau_balance: TableConfig = Field(default_factory=TableConfig)
+    previous_application: TableConfig = Field(default_factory=TableConfig)
+    pos_cash: TableConfig = Field(default_factory=TableConfig)
+    installments: TableConfig = Field(default_factory=TableConfig)
+    credit_card: TableConfig = Field(default_factory=TableConfig)
 
 
 # -----------------------------------------------------------------------------
@@ -292,18 +270,11 @@ class DataConfig(BaseModel):
 class Config(BaseModel):
     """Full configuration combining runtime mode and static data config."""
 
-    # Always required
     run: RunConfig = Field(default_factory=RunConfig)
     splitter: SplitterConfig = Field(default_factory=SplitterConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
-    # Top-level processing step configs
-    cleaner: CleanerConfig = Field(default_factory=CleanerConfig)
-    imputer: ImputerConfig = Field(default_factory=ImputerConfig)
-    aggregator: AggregatorConfig = Field(default_factory=AggregatorConfig)
-    transformer: TransformerConfig = Field(default_factory=TransformerConfig)
 
-    # Step-specific — only needed if that step runs
     model: Optional[ModelConfig] = None
     selection: Optional[SelectionConfig] = None
     tuning: Optional[TuningConfig] = None

@@ -124,13 +124,18 @@ class CrossValidator:
     """Cross-validator with injected splitter and model factory.
 
     Usage:
-        from sklearn.model_selection import StratifiedKFold
-        from credit_risk.models import CrossValidator, ClassificationRankingMetrics
-        from credit_risk.models.model_factory import LGBMFactory
+        from credit_risk.config import load_config
+        cfg = load_config()
+        from credit_risk.models.splitter import TrainTestCVSplitter
 
-        splitter = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        splitter = TrainTestCVSplitter(
+            n_splits=cfg.splitter.n_splits,
+            cv_random_state=cfg.splitter.cv_random_state,
+            test_random_state=cfg.splitter.test_random_state,
+            stratify=cfg.splitter.stratify,
+            shuffle=cfg.splitter.shuffle,
+        )
         metrics = ClassificationRankingMetrics()
-        factory = LGBMFactory()
 
         validator = CrossValidator(
             splitter=splitter,
