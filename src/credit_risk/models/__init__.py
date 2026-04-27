@@ -1,14 +1,17 @@
 """Credit risk models."""
 
 from credit_risk.models.cross_validator import (
-    CrossValidationResult,
     CrossValidator,
-    ModelFactory,
-    SklearnRFFactory,
+    CVResult,
+    CVScores,
 )
 from credit_risk.models.feature_selector import (
     BackwardFeatureEliminator,
     BackwardFeatureSelector,
+)
+from credit_risk.models.final_model import (
+    FinalModelResult,
+    FinalModelTrainer,
 )
 from credit_risk.models.importance import (
     InnerImportance,
@@ -23,43 +26,46 @@ from credit_risk.models.metrics import (
 from credit_risk.models.model_factory import (
     EstimatorPipeline,
     EstimatorPipelineFactory,
-    LGBMFactory,
-    LogisticRegressionFactory,
+    ModelFactory,
+    get_factory,
 )
 from credit_risk.models.splitter import (
     Splitter,
     TrainTestCVSplitter,
 )
 from credit_risk.models.threshold_selector import (
-    CVThresholdSelector,
+    SimpleThresholdSelector,
     ThresholdSelector,
+    ThresholdSelectorResult,
 )
 from credit_risk.models.tuner import (
-    PARAM_SPACES,
     ManyModelOptunaTuner,
+    suggest_params,
 )
 
 __all__ = [
-    "CrossValidationResult",
+    "CVResult",
+    "CVScores",
     "CrossValidator",
     "ModelFactory",
-    "LGBMFactory",
-    "SklearnRFFactory",
     "BackwardFeatureEliminator",
     "BackwardFeatureSelector",
+    "FinalModelResult",
+    "FinalModelTrainer",
     "InnerImportance",
     "PermutationImportance",
     "SHAPImportance",
     "StatisticalImportance",
     "EstimatorPipeline",
     "EstimatorPipelineFactory",
-    "LogisticRegressionFactory",
+    "get_factory",
     "ClassificationMetrics",
     "ClassificationRankingMetrics",
     "Splitter",
     "TrainTestCVSplitter",
-    "CVThresholdSelector",
+    "SimpleThresholdSelector",
     "ThresholdSelector",
+    "ThresholdSelectorResult",
     "ManyModelOptunaTuner",
-    "PARAM_SPACES",
+    "suggest_params",
 ]

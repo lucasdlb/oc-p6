@@ -137,8 +137,6 @@ class ModelPlotter:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        y_pred = (y_pred_proba >= threshold).astype(int)
-
         self.plot_roc_curve(y_true, y_pred_proba)
         plt.savefig(output_path / "roc_curve.png", dpi=150, bbox_inches="tight")
         self.figures.append(("roc_curve", plt.gcf()))

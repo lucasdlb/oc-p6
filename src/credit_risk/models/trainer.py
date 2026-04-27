@@ -7,14 +7,17 @@ import numpy as np
 from lightgbm import LGBMClassifier
 from sklearn.ensemble import RandomForestClassifier
 
-from credit_risk.config.settings import ModelConfig, get_settings
+from credit_risk.config import ModelConfig
 
 logger = logging.getLogger(__name__)
 
 
 class ModelTrainer:
     def __init__(self, config: ModelConfig | None = None):
-        self.config = config or ModelConfig()
+        if config is None:
+            from credit_risk.config import load_config
+            config = load_config().model
+        self.config = config
         self.model = None
         self._feature_names: list[str] = []
 

@@ -36,7 +36,7 @@ models/
 
 # Data
 data/
-!src/credit-risk/data/
+!src/credit-risk/data/*
 !src/credit-risk/data/*.py
 *.csv
 
