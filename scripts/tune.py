@@ -18,16 +18,13 @@ import warnings
 import mlflow
 
 from credit_risk.config import load_config
-from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.imputer import DataImputer
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.features.aggregator import DataAggregator
-from credit_risk.features.store import FeatureStore
-from credit_risk.features.transformer import DataTransformer
+from credit_risk.data.store import FeatureStore
 from credit_risk.mlflow_utils import MlflowLogger
 from credit_risk.models.metrics import ClassificationRankingMetrics
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.models.tuner import ManyModelOptunaTuner
+from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -42,12 +39,22 @@ TABLES = [
     "bureau",
     "bureau_balance",
     "previous_application",
-    "pos_cash_balance",
-    "credit_card_balance",
-    "installments_payments",
+    "pos_cash",
+    "installments",
+    "credit_card",
 ]
 
-USE_SELECTED_FEATURES = True  # Set to False to use all features
+LOADER_KEYS = {
+    "application": "application",
+    "bureau": "bureau",
+    "bureau_balance": "bureau_balance",
+    "previous_application": "previous_application",
+    "pos_cash": "pos_cash_balance",
+    "installments": "installments_payments",
+    "credit_card": "credit_card_balance",
+}
+
+USE_SELECTED_FEATURES = True
 
 cfg = load_config("tuning")
 run_mode = cfg.run.mode
@@ -68,10 +75,10 @@ with ml_logger.start_run(run_name=f"{run_mode}_tuning"):
     splitter = TrainTestCVSplitter(
         test_size=cfg.splitter.test_size,
         n_splits=cfg.splitter.n_splits,
-        random_state=cfg.splitter.random_state,
+        cv_random_state=cfg.splitter.random_state,
         stratify=True,
     )
-    metrics = ClassificationRankingMetrics(roc_auc=True)
+    metrics = ClassificationRankingMetrics()
 
     logger.info(f"CV: {cfg.splitter.n_splits} splits, Trials: {cfg.tuning.n_trials}")
 
@@ -85,26 +92,17 @@ with ml_logger.start_run(run_name=f"{run_mode}_tuning"):
     if sample_frac < 1.0:
         labels = labels.collect().sample(fraction=sample_frac, seed=cfg.run.random_state).lazy()
 
-    cleaner = DataCleaner()
-    imputer = DataImputer()
-    aggregator = DataAggregator()
-    transformer = DataTransformer()
-
     features_list = []
     for table in TABLES:
         logger.info(f"Processing table: {table}")
 
-        df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
+        df = loader.load(LOADER_KEYS[table]).join(labels, on="SK_ID_CURR", how="inner")
         df = df.collect()
 
         logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
-        df = cleaner.clean(df, table, method=cfg.cleaner.method)
-        df = imputer.impute(df, table, method=cfg.imputer.method)
-
-        df = aggregator.aggregate(df.lazy(), table, method=cfg.aggregator.method).collect()
-
-        df = transformer.transform(df, table=table, encoding=cfg.transformer.encoding)
+        table_cfg = getattr(cfg.data, table)
+        df = ProcessingPipeline(table_cfg).fit_transform(df)
 
         id_cols = [c for c in df.columns if c.startswith("SK_ID")]
         feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]

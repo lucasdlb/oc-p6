@@ -17,27 +17,23 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import tempfile
 import warnings
 
-import polars as pl
-
-from credit_risk.config import cfg
-from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.encoding import CategoricalEncoder
-from credit_risk.data.imputer import DataImputer
+from credit_risk.config import load_config
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.features.aggregator import DataAggregator
-from credit_risk.features.store import FeatureStore
-from credit_risk.features.transformer import DataTransformer
-from credit_risk.models.cross_validator import LGBMFactory
+from credit_risk.data.store import FeatureStore
 from credit_risk.models.feature_selector import BackwardFeatureSelector
 from credit_risk.models.final_model import FinalModelTrainer
 from credit_risk.models.importance import get_importance_class
 from credit_risk.models.metrics import ClassificationRankingMetrics
+from credit_risk.models.model_factory import get_factory
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.models.threshold_selector import CVThresholdSelector
+from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -52,13 +48,24 @@ TABLES = [
     "bureau",
     "bureau_balance",
     "previous_application",
-    "pos_cash_balance",
-    "credit_card_balance",
-    "installments_payments",
+    "pos_cash",
+    "installments",
+    "credit_card",
 ]
+
+LOADER_KEYS = {
+    "application": "application",
+    "bureau": "bureau",
+    "bureau_balance": "bureau_balance",
+    "previous_application": "previous_application",
+    "pos_cash": "pos_cash_balance",
+    "installments": "installments_payments",
+    "credit_card": "credit_card_balance",
+}
 
 
 def main():
+    cfg = load_config("selection", "importance", "model")
     run_mode = cfg.run.mode
     logger.info(f"Running in mode: {run_mode}")
 
@@ -66,11 +73,11 @@ def main():
     splitter = TrainTestCVSplitter(
         test_size=cfg.splitter.test_size,
         n_splits=cfg.splitter.n_splits,
-        random_state=cfg.splitter.random_state,
+        cv_random_state=cfg.splitter.random_state,
         stratify=True,
     )
-    ranking_metrics = ClassificationRankingMetrics(roc_auc=True)
-    model_factory = LGBMFactory()
+    ranking_metrics = ClassificationRankingMetrics()
+    model_factory = get_factory(cfg.model.model_type, cfg.model.x_transform)
     threshold_selector = CVThresholdSelector(
         splitter=splitter, model_factory=model_factory, metric="f1"
     )
@@ -80,18 +87,18 @@ def main():
 
     mlflow_active = None
 
-    if cfg.mlflow.enabled:
+    if cfg.output:
         import mlflow
 
         mlflow_active = mlflow
 
-        mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
-        mlflow.set_experiment(cfg.mlflow.experiment_name)
+        mlflow.set_tracking_uri(cfg.output.mlflow_tracking_uri())
+        mlflow.set_experiment(f"{run_mode}_rfe_cv_all")
 
         if mlflow.active_run():
             mlflow.end_run()
 
-        run_name = f"{run_mode}_n_est_{cfg.model.n_estimators}_depth_{cfg.model.max_depth}"
+        run_name = f"{run_mode}_rfe_cv_all"
         mlflow.start_run(run_name=run_name)
         mlflow.log_params(
             {
@@ -100,34 +107,29 @@ def main():
                 "table_count": len(TABLES),
             }
         )
-        mlflow.log_params(cfg.model.model_dump())
+        mlflow.log_params({"model_type": cfg.model.model_type})
+        mlflow.log_params({"x_transform": cfg.model.x_transform})
+        mlflow.log_params(cfg.model.params)
 
-        mlflow.log_dict(cfg.model_dump(), "config.json")
+        mlflow.log_dict(cfg.model_dump(), "model_config.json")
 
-loader = PLLazyDataLoader()
-labels = loader.load_labels()
-if sample_frac < 1.0:
-    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
-    labels = labels.collect().sample(fraction=sample_frac).lazy()
+    loader = PLLazyDataLoader()
+    labels = loader.load_labels()
+    if sample_frac < 1.0:
+        logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
+        labels = labels.collect().sample(fraction=sample_frac).lazy()
 
-cleaner = DataCleaner()
-    imputer = DataImputer()
-    aggregator = DataAggregator()
-    transformer = DataTransformer()
+    features_list = []
+    for table in TABLES:
+        logger.info(f"Processing table: {table}")
 
-features_list = []
-for table in TABLES:
-    logger.info(f"Processing table: {table}")
-
-    df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
-    df = df.collect()
+        df = loader.load(LOADER_KEYS[table]).join(labels, on="SK_ID_CURR", how="inner")
+        df = df.collect()
 
         logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
-        df = cleaner.clean(df, table, method=cfg.processing.cleaning)
-        df = imputer.impute(df, table, method=cfg.processing.imputation)
-        df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
-        df = transformer.transform(df, table=table)
+        table_cfg = getattr(cfg.data, table)
+        df = ProcessingPipeline(table_cfg).fit_transform(df)
 
         id_cols = [c for c in df.columns if c.startswith("SK_ID")]
         feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]
@@ -139,29 +141,16 @@ for table in TABLES:
     for i, df in enumerate(features_list):
         combined = combined.join(df.lazy(), on="SK_ID_CURR", how="left", suffix=f"_{i}")
 
-combined = combined.collect()
+    combined = combined.collect()
 
-logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
+    logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
 
-target_col = cfg.data.target.column
+    target_col = cfg.data.target.column
     id_col = cfg.data.target.id_column
-
-    non_numeric = [c for c in combined.columns if combined.schema[c] == pl.String]
-    if non_numeric:
-        logger.info(f"Encoding {len(non_numeric)} categorical columns")
-        encoder = CategoricalEncoder()
-        combined = encoder.fit_transform(combined)
-        logger.info(f"Encoded: {combined.height} rows, {combined.width} cols")
 
     feature_cols = [c for c in combined.columns if c not in [target_col, id_col]]
 
-    X_full = (
-        combined.select(feature_cols)
-        .to_pandas()
-        # .fillna(0.0)
-        # .replace([float("inf"), float("-inf")], 0.0)
-        .values
-    )
+    X_full = combined.select(feature_cols).to_pandas().values
     y_full = combined.select(target_col).to_numpy().ravel()
 
     logger.info(f"Features: {len(feature_cols)}")
@@ -171,7 +160,7 @@ target_col = cfg.data.target.column
 
     logger.info(f"Train: {X_train.shape[0]} samples, Test: {X_test.shape[0]} samples")
 
-    model_params = cfg.model.model_dump()
+    model_params = cfg.model.params.copy()
 
     logger.info(
         f"RFE-CV backward selection (min {cfg.selection.min_features} features, "
@@ -238,7 +227,6 @@ target_col = cfg.data.target.column
             "test_roc_auc": result.test_roc_auc,
             "test_f1": result.test_f1,
             "model_params": model_params,
-            "processing": cfg.processing.model_dump(),
         },
     )
     logger.info(
@@ -246,9 +234,6 @@ target_col = cfg.data.target.column
     )
 
     if mlflow_active:
-        import json
-        import tempfile
-
         features_data = {
             "tables": TABLES,
             "features": best_features,
@@ -261,7 +246,7 @@ target_col = cfg.data.target.column
             json.dump(features_data, f, indent=2)
         mlflow.log_artifact(features_path)
 
-        final_model = model_factory.create(**model_params)
+        final_model = model_factory(**model_params).build_model_pipeline()
         final_model.fit(X_train_best, y_train)
         mlflow.sklearn.log_model(final_model, "model")
 

@@ -55,3 +55,8 @@ htmlcov/
 AGENTS.md
 opencode.json
 /notebooks/
+
+.opencode/
+artifacts/
+catboost_info/
+prompt.txt

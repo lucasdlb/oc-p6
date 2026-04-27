@@ -32,6 +32,8 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit, manual]
+        files: src/
+
 
   # Tests
       - id: pytest

@@ -20,18 +20,12 @@ from pathlib import Path
 
 import mlflow
 import numpy as np
-import polars as pl
 import shap
 from matplotlib import pyplot as plt
 
-from credit_risk.config import cfg
-from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.encoding import CategoricalEncoder
-from credit_risk.data.imputer import DataImputer
+from credit_risk.config import load_config
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.features.aggregator import DataAggregator
-from credit_risk.features.store import FeatureStore
-from credit_risk.features.transformer import DataTransformer
+from credit_risk.data.store import FeatureStore
 from credit_risk.interpret.shap_explainer import ShapExplainer
 from credit_risk.models.cross_validator import LGBMFactory
 from credit_risk.models.final_model import FinalModelTrainer
@@ -39,6 +33,7 @@ from credit_risk.models.plotter import ModelPlotter
 from credit_risk.models.resampler import create_resampler
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.models.threshold_selector import CVThresholdSelector
+from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -53,11 +48,22 @@ TABLES = [
     "bureau",
     "bureau_balance",
     "previous_application",
-    "pos_cash_balance",
-    "credit_card_balance",
-    "installments_payments",
+    "pos_cash",
+    "installments",
+    "credit_card",
 ]
 
+LOADER_KEYS = {
+    "application": "application",
+    "bureau": "bureau",
+    "bureau_balance": "bureau_balance",
+    "previous_application": "previous_application",
+    "pos_cash": "pos_cash_balance",
+    "installments": "installments_payments",
+    "credit_card": "credit_card_balance",
+}
+
+cfg = load_config()
 run_mode = cfg.run.mode
 logger.info(f"Running final training in mode: {run_mode}")
 
@@ -73,37 +79,21 @@ if sample_frac < 1.0:
     logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
     labels = labels.collect().sample(fraction=sample_frac).lazy()
 
-cleaner = DataCleaner()
-imputer = DataImputer()
-aggregator = DataAggregator()
-transformer = DataTransformer()
-
 store = FeatureStore(root=cfg.output.features_path)
 all_selected, saved_records = store.load_tables(TABLES, suffix=f"_{run_mode}", with_records=True)
 logger.info(f"Total selected features: {len(all_selected)}")
-
-saved_processing = saved_records.get("application", {}).get("meta", {}).get("processing", {})
-if saved_processing and saved_processing != cfg.processing.model_dump():
-    logger.warning(
-        f"Processing config mismatch!\n"
-        f"  Saved: {saved_processing}\n"
-        f"  Current: {cfg.processing.model_dump()}\n"
-        f"  Features may be invalid!"
-    )
 
 features_list = []
 for table in TABLES:
     logger.info(f"Processing table: {table}")
 
-    df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
+    df = loader.load(LOADER_KEYS[table]).join(labels, on="SK_ID_CURR", how="inner")
     df = df.collect()
 
     logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
 
-    df = cleaner.clean(df, table, method=cfg.processing.cleaning)
-    df = imputer.impute(df, table, method=cfg.processing.imputation)
-    df = aggregator.aggregate(df.lazy(), table, method=cfg.processing.aggregation).collect()
-    df = transformer.transform(df, table=table, method=cfg.processing.encoding)
+    table_cfg = getattr(cfg.data, table)
+    df = ProcessingPipeline(table_cfg).fit_transform(df)
 
     df_select = df.drop([c for c in df.columns if c.startswith("SK_ID") and c != "SK_ID_CURR"])
     features_list.append(df_select)
@@ -121,13 +111,6 @@ logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
 target_col = cfg.data.target.column
 id_col = cfg.data.target.id_column
 
-non_numeric = [c for c in combined.columns if combined.schema[c] == pl.String]
-if non_numeric and cfg.processing.encoding != "none":
-    logger.info(f"Encoding {len(non_numeric)} categorical columns")
-    encoder = CategoricalEncoder()
-    combined = encoder.fit_transform(combined)
-    logger.info(f"Encoded: {combined.height} rows, {combined.width} cols")
-
 available_cols = set(combined.columns) - {target_col, id_col}
 feature_cols = [c for c in all_selected if c in available_cols]
 logger.info(f"Using {len(feature_cols)} selected features")
@@ -135,13 +118,12 @@ logger.info(f"Using {len(feature_cols)} selected features")
 X = combined.select(feature_cols).to_pandas()
 y = combined.select(target_col).to_numpy().ravel()
 
-# X = X.fillna(0.0).replace([np.inf, -np.inf], 0.0)
 X = X.to_numpy(dtype=np.float64)
 
 logger.info(f"Data shape: {X.shape}, Features: {len(feature_cols)}")
 
 resampler = None
-if cfg.resampling.enabled:
+if cfg.resampling and cfg.resampling.enabled:
     method = cfg.resampling.method
     kwargs = {
         "sampling_strategy": cfg.resampling.sampling_strategy,
@@ -158,7 +140,7 @@ if cfg.resampling.enabled:
 splitter = TrainTestCVSplitter(
     test_size=cfg.splitter.test_size,
     n_splits=cfg.splitter.n_splits,
-    random_state=cfg.splitter.random_state,
+    cv_random_state=cfg.splitter.random_state,
     stratify=True,
 )
 
@@ -173,7 +155,7 @@ best_model_name = None
 
 mlflow_active = False
 try:
-    exp = mlflow.get_experiment_by_name(cfg.mlflow.experiment_name)
+    exp = mlflow.get_experiment_by_name(f"final_train_{cfg.run.mode}-weighted_threshold-fix")
     if exp:
         runs = mlflow.search_runs(
             [exp.experiment_id],
@@ -182,14 +164,12 @@ try:
             order_by=["metrics.best_roc_auc DESC"],
         )
 
-        # Find run with actual tuned params (not just model name)
         for _, best_run in runs.iterrows():
             run_id = best_run.run_id
             client = mlflow.MlflowClient()
             run = client.get_run(run_id)
             params = dict(run.data.params)
 
-            # Check if this run has actual tuning params (e.g., n_estimators, learning_rate)
             if "n_estimators" in params or "learning_rate" in params:
                 best_roc_auc = best_run.get("metrics.best_roc_auc", 0)
                 best_params = params
@@ -215,7 +195,6 @@ model_params = {
     k: v for k, v in best_params.items() if k not in ("verbose", "run_mode", "models", "best_model")
 }
 
-# Convert string params to proper types
 for k, v in model_params.items():
     if isinstance(v, str):
         try:
@@ -224,7 +203,7 @@ for k, v in model_params.items():
             else:
                 model_params[k] = int(v)
         except ValueError:
-            pass  # Keep as string
+            pass
 
 model_params["verbose"] = -1
 model_params["is_unbalance"] = True
@@ -240,7 +219,6 @@ threshold_selector = CVThresholdSelector(
     model_factory,
     direction="maximize",
     metric="f1",
-    # custom_func=create_cost_sensitive_score(fn_weight=2),
 )
 
 trainer = FinalModelTrainer(model_factory, threshold_selector=threshold_selector)

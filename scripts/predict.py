@@ -3,15 +3,13 @@
 import argparse
 import pickle
 
+import numpy as np
 import polars as pl
 
 from credit_risk.config import load_config
-from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.encoder import CategoricalEncoder
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.features.aggregator import FeatureAggregator
-from credit_risk.features.transformer import FeatureTransformer
 from credit_risk.models.predictor import ModelPredictor
+from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 from credit_risk.utils.logging import setup_logging
 
 
@@ -30,47 +28,23 @@ def main():
         model = pickle.load(f)
 
     loader = PLLazyDataLoader()
-    cleaner = DataCleaner(cfg.data, None)
-    aggregator = FeatureAggregator(cfg.data.features)
-    transformer = FeatureTransformer()
-    encoder = CategoricalEncoder(cfg.data)
     predictor = ModelPredictor(model)
 
-    main_test = loader.load_application_test()
-    main_test = cleaner.clean(main_test)
-
-    lazy_data = loader.load_all_lazy()
-    aggregated_features = aggregator.aggregate_all(
-        bureau_df=lazy_data["bureau"],
-        bureau_balance_df=lazy_data["bureau_balance"],
-        prev_app_df=lazy_data["previous_application"],
-        pos_df=lazy_data["POS_CASH_balance"],
-        installments_df=lazy_data["installments_payments"],
-        cc_df=lazy_data["credit_card_balance"],
-        id_col=cfg.data.target.id_column,
-    )
-
-    main_test = main_test.join(aggregated_features, on=cfg.data.target.id_column, how="left")
-    main_test = transformer.transform(main_test)
-
-    cat_cols = encoder.get_low_cardinality_columns(main_test)
-    main_test = encoder.label_encode(main_test, cat_cols)
-
     id_col = cfg.data.target.id_column
+
+    main_test = loader.load("application_test").collect()
+    main_test = ProcessingPipeline(cfg.data.application).fit_transform(main_test)
+
     feature_cols = [c for c in main_test.columns if c != id_col]
 
     X_test = main_test.select(feature_cols).to_numpy()
-    X_test = pl.DataFrame(X_test).to_numpy()
-    X_test = pl.DataFrame(X_test, schema=feature_cols).to_numpy()
-    import numpy as np
-
     X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
 
     predictions = predictor.predict_proba(X_test)
 
     submission = pl.DataFrame(
         {
-            cfg.data.target.id_column: main_test.select(id_col).to_series(),
+            id_col: main_test.select(id_col).to_series(),
             "TARGET": predictions,
         }
     )

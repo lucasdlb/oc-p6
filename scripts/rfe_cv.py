@@ -24,20 +24,17 @@ import warnings
 import mlflow
 
 from credit_risk.config import load_config
-from credit_risk.data.cleaner import DataCleaner
-from credit_risk.data.imputer import DataImputer
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.features.aggregator import DataAggregator
-from credit_risk.features.store import FeatureStore
-from credit_risk.features.transformer import DataTransformer
+from credit_risk.data.store import FeatureStore
 from credit_risk.mlflow_utils import MlflowLogger
-from credit_risk.models.cross_validator import LGBMFactory
 from credit_risk.models.feature_selector import BackwardFeatureSelector
 from credit_risk.models.final_model import FinalModelTrainer
 from credit_risk.models.importance import get_importance_class
 from credit_risk.models.metrics import ClassificationRankingMetrics
+from credit_risk.models.model_factory import get_factory
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.models.threshold_selector import CVThresholdSelector
+from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -51,7 +48,7 @@ parser = argparse.ArgumentParser(description="RFE-CV feature selection")
 parser.add_argument("--table", type=str, default="application")
 args = parser.parse_args()
 
-cfg = load_config("selection", "importance")
+cfg = load_config("selection", "importance", "model")
 
 table = args.table
 run_mode = cfg.run.mode
@@ -63,11 +60,11 @@ sample_frac = cfg.run.sample_fraction
 splitter = TrainTestCVSplitter(
     test_size=cfg.splitter.test_size,
     n_splits=cfg.splitter.n_splits,
-    random_state=cfg.splitter.random_state,
+    cv_random_state=cfg.splitter.random_state,
     stratify=True,
 )
-ranking_metrics = ClassificationRankingMetrics(roc_auc=True)
-model_factory = LGBMFactory()
+ranking_metrics = ClassificationRankingMetrics()
+model_factory = get_factory(cfg.model.model_type, cfg.model.x_transform)
 threshold_selector = CVThresholdSelector(
     splitter=splitter, model_factory=model_factory, metric="f1"
 )
@@ -90,20 +87,13 @@ with ml_logger.start_run(run_name=run_name):
         logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
         labels = labels.collect().sample(fraction=sample_frac, seed=cfg.run.random_state).lazy()
 
-    df = loader.load(args.table).join(labels, on="SK_ID_CURR", how="inner")
+    df = loader.load(table).join(labels, on="SK_ID_CURR", how="inner")
     df = df.collect()
 
     logger.info(f"{args.table}: {df.height} rows, {df.width} cols")
 
-    cleaner = DataCleaner()
-    imputer = DataImputer()
-    aggregator = DataAggregator()
-    transformer = DataTransformer()
-
-    df = cleaner.clean(df, table, method=cfg.cleaner.method)
-    df = imputer.impute(df, table, method=cfg.imputer.method)
-    df = aggregator.aggregate(df.lazy(), table, method=cfg.aggregator.method).collect()
-    df = transformer.transform(df, table=table, encoding=cfg.transformer.encoding)
+    table_cfg = getattr(cfg.data, table)
+    df = ProcessingPipeline(table_cfg).fit_transform(df)
 
     df = df.drop("TARGET")
     main_df = labels.join(df.lazy(), on="SK_ID_CURR", how="inner").collect()
@@ -130,7 +120,7 @@ with ml_logger.start_run(run_name=run_name):
 
     logger.info(f"Train: {X_train.shape[0]} samples, Test: {X_test.shape[0]} samples")
 
-    model_params = cfg.model.model_dump()
+    model_params = cfg.model.params.copy()
 
     logger.info(
         f"RFE-CV backward selection (min {cfg.selection.min_features} features, "
@@ -196,10 +186,11 @@ with ml_logger.start_run(run_name=run_name):
             "test_roc_auc": result.test_roc_auc,
             "test_f1": result.test_f1,
             "model_params": model_params,
-            "cleaner": cfg.cleaner.model_dump(),
-            "imputer": cfg.imputer.model_dump(),
-            "aggregator": cfg.aggregator.model_dump(),
-            "transformer": cfg.transformer.model_dump(),
+            "cleaner": table_cfg.cleaner,
+            "imputer": table_cfg.imputer,
+            "aggregator": table_cfg.aggregator,
+            "transformer": table_cfg.transformer,
+            "encoder": table_cfg.encoder,
         },
     )
     logger.info(
@@ -218,7 +209,7 @@ with ml_logger.start_run(run_name=run_name):
         json.dump(features_data, f, indent=2)
     ml_logger.log_file_artifact(features_path)
 
-    final_model = model_factory.create(**model_params)
+    final_model = model_factory(**model_params).build_model_pipeline()
     final_model.fit(X_train_best, y_train)
     ml_logger.log_model(final_model, "model")
 
