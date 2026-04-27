@@ -237,9 +237,9 @@ class TableConfig(BaseModel):
     """
 
     include: bool = True
-    cleaner: str = "RawCleaner"
-    imputer: str = "RawImputer"
-    aggregator: str = "NoOpAggregator"
+    cleaner: str = "NoOpStep"
+    imputer: str = "NoOpStep"
+    aggregator: str = "NoOpStep"
     transformer: str = "ApplicationTransformer"
     encoder: str = "PolarsOneHotEncoder"
 

@@ -4,14 +4,12 @@
 [data]
 data_dir = "data"
 output_dir = "output"
-random_state = 42
 
 [target]
 column = "TARGET"
 id_column = "SK_ID_CURR"
 
 [sources]
-# Data source files (loaded by loader.py)
 application = "data/application_train.csv"
 bureau = "data/bureau.csv"
 bureau_balance = "data/bureau_balance.csv"
@@ -21,10 +19,7 @@ installments = "data/installments_payments.csv"
 credit_card = "data/credit_card_balance.csv"
 
 [data.features]
-# Columns to always drop
 drop_always = ["SK_ID_CURR", "SK_ID_BUREAU", "SK_ID_PREV"]
-
-# Categorical columns for encoding
 categorical = [
     "NAME_CONTRACT_TYPE",
     "CODE_GENDER",
@@ -40,11 +35,8 @@ categorical = [
     "WALLSMATERIAL_MODE",
     "HOUSETYPE_MODE",
 ]
-
-# EXT_SOURCE columns (highest importance)
 ext_source = ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
 
-# Aggregation features per table
 bureau_agg_features = [
     "DAYS_CREDIT",
     "CREDIT_DAY_OVERDUE",
@@ -87,62 +79,58 @@ credit_card_agg_features = [
 ]
 bureau_balance_agg_features = ["MONTHS_BALANCE", "STATUS"]
 
-[data.bureau]
-# Bureau aggregation features
+[data.application]
 include = true
-features = [
-    "DAYS_CREDIT",
-    "CREDIT_DAY_OVERDUE",
-    "CNT_CREDIT_PROLONG",
-    "AMT_CREDIT_SUM_OVERDUE",
-    "AMT_CREDIT_SUM",
-    "AMT_ANNUITY",
-]
+cleaner = "ApplicationCleaner"
+imputer = "ApplicationImputer"
+    aggregator = "NoOpStep"
+transformer = "ApplicationTransformer"
+encoder = "PolarsOneHotEncoder"
+
+[data.bureau]
+include = true
+cleaner = "BureauCleaner"
+imputer = "BureauImputer"
+aggregator = "BureauAggregator"
+transformer = "BureauTransformer"
+encoder = "PolarsOneHotEncoder"
 
 [data.bureau_balance]
 include = true
-features = ["MONTHS_BALANCE", "STATUS"]
+cleaner = "BureauBalanceCleaner"
+imputer = "BureauBalanceImputer"
+aggregator = "BureauBalanceAggregator"
+transformer = "BureauBalanceTransformer"
+encoder = "PolarsOneHotEncoder"
 
 [data.previous_application]
 include = true
-features = [
-    "AMT_ANNUITY",
-    "AMT_APPLICATION",
-    "AMT_CREDIT",
-    "AMT_DOWN_PAYMENT",
-    "DAYS_DECISION",
-    "CNT_PAYMENT",
-]
+cleaner = "PreviousApplicationCleaner"
+imputer = "PreviousApplicationImputer"
+aggregator = "PreviousApplicationAggregator"
+transformer = "PreviousApplicationTransformer"
+encoder = "PolarsOneHotEncoder"
 
 [data.pos_cash]
 include = true
-features = [
-    "MONTHS_BALANCE",
-    "CNT_INSTALMENT",
-    "CNT_INSTALMENT_FUTURE",
-    "SK_DPD",
-    "SK_DPD_DEF",
-]
+cleaner = "POSCashCleaner"
+imputer = "POSCashImputer"
+aggregator = "POSCashAggregator"
+transformer = "POSCashTransformer"
+encoder = "PolarsOneHotEncoder"
 
 [data.installments]
 include = true
-features = [
-    "NUM_INSTALMENT_NUMBER",
-    "NUM_INSTALMENT_VERSION",
-    "AMT_INSTALMENT",
-    "AMT_PAYMENT",
-]
+cleaner = "InstallmentsCleaner"
+imputer = "InstallmentsImputer"
+aggregator = "InstallmentsAggregator"
+transformer = "InstallmentsTransformer"
+encoder = "PolarsOneHotEncoder"
 
 [data.credit_card]
 include = true
-features = [
-    "MONTHS_BALANCE",
-    "AMT_BALANCE",
-    "AMT_CREDIT_LIMIT_ACTUAL",
-    "AMT_DRAWINGS_ATM_CURRENT",
-    "AMT_DRAWINGS_CURRENT",
-    "AMT_PAYMENT_CURRENT",
-    "CNT_INSTALMENT_MATURE_CUM",
-    "SK_DPD",
-    "SK_DPD_DEF",
-]
+cleaner = "CreditCardCleaner"
+imputer = "CreditCardImputer"
+aggregator = "CreditCardAggregator"
+transformer = "CreditCardTransformer"
+encoder = "PolarsOneHotEncoder"
