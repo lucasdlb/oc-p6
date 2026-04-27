@@ -1,0 +1,15 @@
+# Sweep processing configurations for application table
+# List values become sweep axes (cartesian product)
+
+[data.application]
+include = true
+cleaner = "ApplicationCleaner"
+imputer = "ApplicationImputer"
+aggregator = "NoOpStep"
+transformer = ["NoOpStep", "ApplicationTransformer"]
+encoder = ["PolarsTargetEncoder", "CategoricalEncoder", "PolarsOneHotEncoder"]
+
+# Can add more axes, e.g.:
+# [data.bureau]
+# aggregator = ["BureauAggregator", "NoOpStep"]
+# encoder = ["PolarsTargetEncoder", "PolarsOneHotEncoder"]

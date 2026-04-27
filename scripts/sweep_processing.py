@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-"""Sweep processing methods using ConfigGrid.
+"""Sweep processing configurations using ConfigGrid.
 
-Tests all combinations of cleaner, imputer, aggregator, and transformer methods.
+Tests all combinations defined in sweep_processing.toml.
+Each axis in the TOML becomes a sweep dimension (cartesian product).
 
 Usage:
     RUN_MODE=debug uv run python scripts/sweep_processing.py
@@ -32,16 +33,17 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    base_cfg = load_config("model")
-    grid = ConfigGrid(CONFIG_DIR / "sweep.toml", base_config=base_cfg)
+    base_cfg = load_config("selection", "model")
+    grid = ConfigGrid(CONFIG_DIR / "sweep_processing.toml", base_config=base_cfg)
     logger.info(f"Running {len(grid)} configurations")
+    logger.info(f"Grid axes: {list(grid.axes.keys())}")
 
     mlflow.set_tracking_uri(base_cfg.output.mlflow_tracking_uri())
     mlflow.set_experiment("sweep_processing")
     ml_logger = MlflowLogger()
-    with ml_logger.start_run(run_name="sweep_parent2"):
-        ml_logger.log_dict_artifact(base_cfg.model_dump(), "sweep_config.json")
-        ml_logger.log_file_artifact(str(CONFIG_DIR / "sweep.toml"))
+    with ml_logger.start_run(run_name="sweep_processing"):
+        ml_logger.log_dict_artifact(base_cfg.model_dump(), "base_config.json")
+        ml_logger.log_file_artifact(str(CONFIG_DIR / "sweep_processing.toml"))
         ml_logger.log_grid_config(grid)
         logger.info("MLflow tracking enabled")
 
@@ -49,24 +51,29 @@ def main():
 
         results = []
         for i, cfg in enumerate(grid):
-            logger.info(
-                f"[{i + 1}/{len(grid)}] "
-                f"cleaner={cfg.cleaner.method}, imputer={cfg.imputer.method}, "
-                f"aggregator={cfg.aggregator.method}, "
-                f"transformer={cfg.transformer.encoding}"
-            )
+            axis_desc = _format_cfg(cfg, grid.axes)
+            logger.info(f"[{i + 1}/{len(grid)}] {axis_desc}")
 
             roc_auc = run_experiment(config=cfg)
-            results.append((cfg, roc_auc))
+            results.append((axis_desc, roc_auc))
             logger.info(f"  -> ROC AUC: {roc_auc:.4f}")
 
         logger.info("=" * 60)
         logger.info("All results:")
-        for cfg, roc_auc in results:
-            logger.info(
-                f"  {cfg.cleaner.method}/{cfg.imputer.method}/{cfg.aggregator.method}/"
-                f"{cfg.transformer.encoding}: ROC AUC = {roc_auc:.4f}"
-            )
+        for axis_desc, roc_auc in results:
+            logger.info(f"  {axis_desc}: ROC AUC = {roc_auc:.4f}")
+
+
+def _format_cfg(cfg, axes: dict[str, list]) -> str:
+    """Format config as readable sweep axis values."""
+    parts = []
+    for dotted_key in axes.keys():
+        keys = dotted_key.split(".")
+        val = cfg
+        for k in keys:
+            val = getattr(val, k)
+        parts.append(f"{dotted_key}={val}")
+    return ", ".join(parts)
 
 
 if __name__ == "__main__":

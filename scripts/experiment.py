@@ -26,6 +26,7 @@ from credit_risk.models.model_factory import get_factory
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.pipeline.cv_pipeline import ProcessingCV
 from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
+from credit_risk.pipeline.table_transformer import TableTransformer
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -74,10 +75,12 @@ def main(config=None):
 
         tables = {table: table_raw}
 
+        pipeline_factories = {
+            t: lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)).build() for t in tables
+        }
+        table_transformer = TableTransformer(pipeline_factories=pipeline_factories)
         cv = ProcessingCV(
-            pipeline_factories={
-                t: lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)) for t in tables
-            },
+            table_transformer=table_transformer,
             splitter=splitter,
             model_factory=get_factory(cfg.model.model_type, cfg.model.x_transform),
         )
