@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from credit_risk.data.imputation.base import DefaultNumericImputer, TableImputer
+from credit_risk.data.imputation.helpers import DefaultNumericImputer
 
 
-class BureauBalanceImputer(DefaultNumericImputer, TableImputer):
+class BureauBalanceImputer(DefaultNumericImputer):
     """Imputer for bureau_balance table.
 
     Uses median for numeric columns (MONTHS_BALANCE).

@@ -17,20 +17,20 @@ from __future__ import annotations
 from credit_risk.config.config import load_config
 from credit_risk.config.config_grid import ConfigGrid
 from credit_risk.config.models import (
-    AggregationConfig,
-    CleanerConfig,
     Config,
     DataConfig,
+    DataSourceFiles,
     FeaturesConfig,
     ImportanceConfig,
-    ImputerConfig,
     InterpretConfig,
     ModelConfig,
+    OutputConfig,
     ResamplingConfig,
     RunConfig,
     SelectionConfig,
     SplitterConfig,
-    TransformerConfig,
+    TableConfig,
+    TargetConfig,
     TuningConfig,
 )
 
@@ -46,12 +46,10 @@ __all__ = [
     "InterpretConfig",
     "TuningConfig",
     "DataConfig",
+    "DataSourceFiles",
     "FeaturesConfig",
-    "AggregationConfig",
+    "TableConfig",
+    "TargetConfig",
     "ResamplingConfig",
-    # Processing step configs
-    "CleanerConfig",
-    "ImputerConfig",
-    "AggregatorConfig",
-    "TransformerConfig",
+    "OutputConfig",
 ]

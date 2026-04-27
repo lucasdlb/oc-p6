@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from credit_risk.data.imputation.base import MedianAndModeImputer, TableImputer
+from credit_risk.data.imputation.helpers import MedianAndModeImputer
 
 
-class POSCashImputer(MedianAndModeImputer, TableImputer):
+class POSCashImputer(MedianAndModeImputer):
     """Imputer for POS_CASH_balance table.
 
     Uses median for numeric columns, mode for categorical.

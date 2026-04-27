@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import pandas as pd
 import polars as pl
 from lightgbm import LGBMRegressor
+from typing import override
+
 from polars import DataFrame
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer
 
-from credit_risk.data.imputation.base import TableImputer
+from credit_risk.data.base import ProcessingStep
 
 APARTMENT_COLS = [
     "APARTMENTS_AVG",
@@ -68,22 +70,7 @@ AMT_REQ_CREDIT_BUREAU_COLS = [
 EXT_SOURCE_COLS = ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
 
 
-def group_rare_categories(pdf: pd.DataFrame, min_freq: float = 0.01) -> pd.DataFrame:
-    for col in pdf.select_dtypes(include="category").columns:
-        freq = pdf[col].value_counts(normalize=True)
-        rare = freq[freq < min_freq].index
-        if len(rare) > 0:
-            # 1. add "Other" to known categories first
-            if "Other" not in pdf[col].cat.categories:
-                pdf[col] = pdf[col].cat.add_categories("Other")
-            # 2. replace rare → "Other"
-            pdf[col] = pdf[col].where(~pdf[col].isin(rare), other="Other")
-            # 3. now safe to remove rare categories from the registry
-            pdf[col] = pdf[col].cat.remove_categories(rare)
-    return pdf
-
-
-class ApplicationImputer(TableImputer):
+class ApplicationImputer(ProcessingStep):
     """Imputer for application_train/test tables.
 
     Domain-aware imputation:
@@ -92,177 +79,196 @@ class ApplicationImputer(TableImputer):
     - Apartment features: 0 when HOUSETYPE_MODE is NaN, median by housing type otherwise
     - EXT_SOURCE_*: median + binary missingness flag
     - OCCUPATION_TYPE: mode by NAME_INCOME_TYPE
+
+    Implements fit/transform to prevent data leakage.
     """
 
-    def impute(self, df: DataFrame) -> DataFrame:
-        df = self._impute_own_car_age(df)
-        df = self._impute_amt_req_credit_bureau(df)
-        df = self._impute_apartment_features(df)
-        df = self._impute_ext_source(df)
-        df = self._impute_occupation_type(df)
+    def __init__(self) -> None:
+        self._median_car_age: float = 0.0
+        self._apartment_medians: dict[str, float] = {}
+        self._apartment_by_housing: dict[str, dict[str, float]] = {}
+        self._ext_source_medians: dict[str, float] = {}
+        self._occupation_by_income: dict[str, str] = {}
+        self._default_occupation: str = "Laborers"
+        self._cat_modes: dict[str, str] = {}
+        self._int_cols: dict[str, object] = {}
+        self._apartment_learned_cols: list[str] = []
+        self._amt_req_cols: list[str] = []
+        self._high_missing: list[str] = []
+        self._low_missing: list[str] = []
+        self._iterative_imputer: IterativeImputer | None = None
 
-        df = df.drop(APARTMENT_COLS)
+    def __sklearn_is_fitted__(self) -> bool:
+        return hasattr(self, "_fitted") and self._fitted
 
-        int_cols = {
-            col: dtype
-            for col, dtype in zip(df.columns, df.dtypes)
-            if dtype in (pl.Int32, pl.Int64, pl.UInt32, pl.UInt64)
-        }
-
-        pdf = df.to_pandas()
-
-        # separate numeric and categorical
-        num_cols = pdf.select_dtypes(include="number").columns.tolist()
-        cat_cols = pdf.select_dtypes(include="object").columns.tolist()
-
-        # simple fill for categoricals — mode per column
-        for col in cat_cols:
-            pdf[col] = pdf[col].fillna(pdf[col].mode()[0])
-
-        # faster: limit which columns get iterative treatment
-        high_missing = [c for c in num_cols if df[c].null_count() / len(df) > 0.05]
-        low_missing = [c for c in num_cols if df[c].null_count() / len(df) <= 0.05]
-
-        # cheap median fill for low-missing columns
-        pdf[low_missing] = pdf[low_missing].fillna(pdf[low_missing].median())
-
-        # expensive iterative imputation only where it matters
-        imp = IterativeImputer(estimator=LGBMRegressor(n_estimators=50, verbosity=-1), max_iter=3)
-        pdf[high_missing] = imp.fit_transform(pdf[high_missing])
-
-        # iterative imputation on numerics only
-        imp = IterativeImputer(
-            estimator=LGBMRegressor(n_estimators=50, verbosity=-1),
-            max_iter=5,
-            random_state=42,
-        )
-        pdf[num_cols] = imp.fit_transform(pdf[num_cols])
-
-        df = pl.from_pandas(pdf).with_columns(
-            [pl.col(col).cast(dtype) for col, dtype in int_cols.items()]
-        )
-        return df
-
-    def _impute_own_car_age(self, df: DataFrame) -> DataFrame:
-        if "OWN_CAR_AGE" not in df.columns or "FLAG_OWN_CAR" not in df.columns:
-            return df
-
-        median_car_age = (
-            df.filter(pl.col("FLAG_OWN_CAR") == "Y").select(pl.col("OWN_CAR_AGE").median()).item()
-        )
-        if median_car_age is None:
-            median_car_age = 0.0
-
-        df = df.with_columns(
-            pl.when(pl.col("FLAG_OWN_CAR") == "N")
-            .then(pl.lit(-1.0))
-            .when(pl.col("OWN_CAR_AGE").is_null())
-            .then(pl.lit(median_car_age))
-            .otherwise(pl.col("OWN_CAR_AGE"))
-            .alias("OWN_CAR_AGE")
-        )
-
-        return df
-
-    def _impute_amt_req_credit_bureau(self, df: DataFrame) -> DataFrame:
-        cols = [c for c in AMT_REQ_CREDIT_BUREAU_COLS if c in df.columns]
-        if not cols:
-            return df
-
-        all_null_expr = pl.col(cols[0]).is_null()
-        for col in cols[1:]:
-            all_null_expr = all_null_expr & pl.col(col).is_null()
-
-        fill_exprs = [pl.col(c).fill_null(-1).alias(c) for c in cols]
-        df = df.with_columns(*fill_exprs, all_null_expr.alias("AMT_REQ_CREDIT_BUREAU_missing"))
-
-        return df
-
-    def _impute_apartment_features(self, df: DataFrame) -> DataFrame:
-        apartment_cols = [c for c in APARTMENT_COLS if c in df.columns]
-        if not apartment_cols:
-            return df
-
-        housing_types = ["block of flats", "specific housing", "terraced house"]
-
-        for col in apartment_cols:
-            global_median = df.select(pl.col(col).median()).item() or 0.0
-
-            median_by_housing = {}
-            for ht in housing_types:
-                ht_median = (
-                    df.filter(pl.col("HOUSETYPE_MODE") == ht).select(pl.col(col).median()).item()
-                )
-                if ht_median is not None:
-                    median_by_housing[ht] = ht_median
-
-            if not median_by_housing:
-                df = df.with_columns(pl.col(col).fill_null(global_median).alias(col))
-                continue
-
-            expr = pl.when(pl.col("HOUSETYPE_MODE").is_null()).then(pl.lit(0.0))
-            for ht, med in median_by_housing.items():
-                expr = expr.when(pl.col("HOUSETYPE_MODE") == ht).then(pl.lit(med))
-            expr = expr.otherwise(pl.col(col).fill_null(global_median))
-
-            df = df.with_columns(expr.alias(col))
-
-        return df
-
-    def _impute_ext_source(self, df: DataFrame) -> DataFrame:
-        cols = [c for c in EXT_SOURCE_COLS if c in df.columns]
-        if not cols:
-            return df
-
-        for col in cols:
-            median_val = df.select(pl.col(col).median()).item() or 0.0
-
-            df = df.with_columns(
-                pl.when(pl.col(col).is_null())
-                .then(pl.lit(1))
-                .otherwise(pl.lit(0))
-                .alias(f"{col}_missing"),
-                pl.col(col).fill_null(median_val).alias(col),
+    @override
+    def fit(self, X: DataFrame, y=None) -> "ApplicationImputer":
+        if "OWN_CAR_AGE" in X.columns and "FLAG_OWN_CAR" in X.columns:
+            median = (
+                X.filter(pl.col("FLAG_OWN_CAR") == "Y")
+                .select(pl.col("OWN_CAR_AGE").median())
+                .item()
             )
+            self._median_car_age = median if median is not None else 0.0
 
-        return df
+        self._apartment_medians: dict[str, float] = {}
+        self._apartment_by_housing: dict[str, dict[str, float]] = {}
+        for col in [c for c in APARTMENT_COLS if c in X.columns]:
+            self._apartment_medians[col] = X.select(pl.col(col).median()).item() or 0.0
+            by_housing: dict[str, float] = {}
+            for ht in ["block of flats", "specific housing", "terraced house"]:
+                val = X.filter(pl.col("HOUSETYPE_MODE") == ht).select(pl.col(col).median()).item()
+                if val is not None:
+                    by_housing[ht] = val
+            self._apartment_by_housing[col] = by_housing
 
-    def _impute_occupation_type(self, df: DataFrame) -> DataFrame:
-        if "OCCUPATION_TYPE" not in df.columns or "NAME_INCOME_TYPE" not in df.columns:
-            return df
+        self._ext_source_medians: dict[str, float] = {}
+        for col in [c for c in EXT_SOURCE_COLS if c in X.columns]:
+            self._ext_source_medians[col] = X.select(pl.col(col).median()).item() or 0.0
 
-        income_occ_map: dict[str, str] = {}
-        for income in df["NAME_INCOME_TYPE"].unique().to_list():
+        self._occupation_by_income: dict[str, str] = {}
+        for income in X["NAME_INCOME_TYPE"].unique().to_list():
             if income is None:
                 continue
-            filtered = df.filter(
+            filtered = X.filter(
                 (pl.col("NAME_INCOME_TYPE") == income) & (pl.col("OCCUPATION_TYPE").is_not_null())
             )
             if filtered.height > 0:
-                mode_occ = (
-                    filtered.select(pl.col("OCCUPATION_TYPE")).to_pandas()["OCCUPATION_TYPE"].mode()
-                )
-                if len(mode_occ) > 0:
-                    income_occ_map[income] = mode_occ[0]
+                mode_series = filtered.select(pl.col("OCCUPATION_TYPE").drop_nulls().mode().first())
+                self._occupation_by_income[income] = mode_series.item()
 
-        global_mode = df.select(pl.col("OCCUPATION_TYPE")).to_pandas()["OCCUPATION_TYPE"].mode()
-        default_occupation = global_mode.iloc[0] if len(global_mode) > 0 else "Laborers"
+        if "OCCUPATION_TYPE" in X.columns:
+            global_mode = X.select(pl.col("OCCUPATION_TYPE").drop_nulls().mode().first()).item()
+            self._default_occupation = global_mode if global_mode is not None else "Laborers"
+        else:
+            self._default_occupation = "Laborers"
 
-        for income, occ in income_occ_map.items():
-            df = df.with_columns(
-                pl.when(
-                    (pl.col("OCCUPATION_TYPE").is_null()) & (pl.col("NAME_INCOME_TYPE") == income)
+        self._cat_modes: dict[str, str] = {}
+        for col in X.columns:
+            if X.schema[col] == pl.String:
+                mode = X.select(pl.col(col).drop_nulls().mode().first()).item()
+                if mode is not None:
+                    self._cat_modes[col] = mode
+
+        self._int_cols: dict[str, object] = {
+            col: dtype
+            for col, dtype in zip(X.columns, X.dtypes, strict=True)
+            if dtype in (pl.Int32, pl.Int64, pl.UInt32, pl.UInt64)
+        }
+
+        self._apartment_learned_cols = [c for c in APARTMENT_COLS if c in X.columns]
+        self._amt_req_cols = [c for c in AMT_REQ_CREDIT_BUREAU_COLS if c in X.columns]
+
+        pdf = X.drop(self._apartment_learned_cols).to_pandas()
+        num_cols = pdf.select_dtypes(include="number").columns.tolist()
+        self._high_missing = [c for c in num_cols if X[c].null_count() / len(X) > 0.05]
+        self._low_missing = [c for c in num_cols if c not in self._high_missing]
+
+        if self._high_missing:
+            self._iterative_imputer = IterativeImputer(
+                estimator=LGBMRegressor(n_estimators=50, verbosity=-1),
+                max_iter=3,
+                random_state=42,
+            )
+            self._iterative_imputer.fit(pdf[self._high_missing])
+        else:
+            self._iterative_imputer = None
+
+        self._fitted = True
+
+        return self
+
+    @override
+    def transform(self, X: DataFrame, y=None) -> DataFrame:
+        if "OWN_CAR_AGE" in X.columns and "FLAG_OWN_CAR" in X.columns:
+            X = X.with_columns(
+                pl.when(pl.col("FLAG_OWN_CAR") == "N")
+                .then(pl.lit(-1.0))
+                .when(pl.col("OWN_CAR_AGE").is_null())
+                .then(pl.lit(self._median_car_age))
+                .otherwise(pl.col("OWN_CAR_AGE"))
+                .alias("OWN_CAR_AGE")
+            )
+
+        if self._amt_req_cols:
+            all_null_expr = pl.col(self._amt_req_cols[0]).is_null()
+            for col in self._amt_req_cols[1:]:
+                all_null_expr = all_null_expr & pl.col(col).is_null()
+            fill_exprs = [pl.col(c).fill_null(-1).alias(c) for c in self._amt_req_cols]
+            X = X.with_columns(*fill_exprs, all_null_expr.alias("AMT_REQ_CREDIT_BUREAU_missing"))
+
+        for col in self._apartment_learned_cols:
+            global_median = self._apartment_medians.get(col, 0.0)
+            by_housing = self._apartment_by_housing.get(col, {})
+            if by_housing:
+                expr = pl.when(pl.col("HOUSETYPE_MODE").is_null()).then(pl.lit(0.0))
+                for ht, med in by_housing.items():
+                    expr = expr.when(pl.col("HOUSETYPE_MODE") == ht).then(pl.lit(med))
+                expr = expr.otherwise(pl.col(col).fill_null(global_median))
+                X = X.with_columns(expr.alias(col))
+            else:
+                X = X.with_columns(pl.col(col).fill_null(global_median).alias(col))
+
+        for col, median in self._ext_source_medians.items():
+            if col in X.columns:
+                X = X.with_columns(
+                    pl.when(pl.col(col).is_null())
+                    .then(pl.lit(1))
+                    .otherwise(pl.lit(0))
+                    .alias(f"{col}_missing"),
+                    pl.col(col).fill_null(median).alias(col),
                 )
-                .then(pl.lit(occ))
+
+        if "OCCUPATION_TYPE" in X.columns and "NAME_INCOME_TYPE" in X.columns:
+            for income, occ in self._occupation_by_income.items():
+                X = X.with_columns(
+                    pl.when(
+                        (pl.col("OCCUPATION_TYPE").is_null())
+                        & (pl.col("NAME_INCOME_TYPE") == income)
+                    )
+                    .then(pl.lit(occ))
+                    .otherwise(pl.col("OCCUPATION_TYPE"))
+                    .alias("OCCUPATION_TYPE")
+                )
+            X = X.with_columns(
+                pl.when(pl.col("OCCUPATION_TYPE").is_null())
+                .then(pl.lit(self._default_occupation))
                 .otherwise(pl.col("OCCUPATION_TYPE"))
                 .alias("OCCUPATION_TYPE")
             )
 
-        df = df.with_columns(
-            pl.when(pl.col("OCCUPATION_TYPE").is_null())
-            .then(pl.lit(default_occupation))
-            .otherwise(pl.col("OCCUPATION_TYPE"))
-            .alias("OCCUPATION_TYPE")
+        if self._apartment_learned_cols:
+            X = X.drop(self._apartment_learned_cols)
+
+        result_X = X.clone()
+
+        if self._cat_modes:
+            cat_exprs = []
+            for col, mode in self._cat_modes.items():
+                if col in result_X.columns:
+                    cat_exprs.append(pl.col(col).fill_null(mode).alias(col))
+            if cat_exprs:
+                result_X = result_X.with_columns(cat_exprs)
+
+        work_pdf = result_X.to_pandas()
+
+        if self._low_missing:
+            train_medians = {
+                c: work_pdf[c].median() for c in self._low_missing if c in work_pdf.columns
+            }
+            work_pdf[self._low_missing] = work_pdf[self._low_missing].fillna(train_medians)
+
+        if self._high_missing and self._iterative_imputer is not None:
+            work_pdf[self._high_missing] = self._iterative_imputer.transform(
+                work_pdf[self._high_missing]
+            )
+
+        result_X = pl.from_pandas(work_pdf).with_columns(
+            [
+                pl.col(col).cast(dtype)
+                for col, dtype in self._int_cols.items()
+                if col in result_X.columns
+            ]
         )
 
-        return df
+        return result_X

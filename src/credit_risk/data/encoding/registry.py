@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from sklearn.preprocessing import TargetEncoder
+
+from credit_risk.data.encoding.onehot import PolarsTargetEncoder
 from credit_risk.data.registry import Registry
 
 
@@ -18,3 +21,4 @@ class EncodingRegistry(Registry):
         cls._registry["CategoricalEncoder"] = CategoricalEncoder
         cls._registry["NoOpStep"] = NoOpStep
         cls._registry["PolarsOneHotEncoder"] = PolarsOneHotEncoder
+        cls._registry["PolarsTargetEncoder"] = PolarsTargetEncoder

@@ -7,12 +7,14 @@ import logging
 import polars as pl
 from polars import DataFrame
 
-from credit_risk.data.cleaning.base import TableCleaner
+from typing import override
+
+from credit_risk.data.base import StatelessStep
 
 logger = logging.getLogger(__name__)
 
 
-class ApplicationCleaner(TableCleaner):
+class ApplicationCleaner(StatelessStep):
     """Cleaner for application_train/test tables.
 
     Handles:
@@ -22,12 +24,12 @@ class ApplicationCleaner(TableCleaner):
 
     _SENTINEL = 365243
 
-    def clean(self, df: DataFrame) -> DataFrame:
-        original_cols = set(df.columns)
+    @override
+    def transform(self, X: DataFrame, y=None) -> DataFrame:
         exprs = []
         drop_cols = []
 
-        if "DAYS_EMPLOYED" in df.columns:
+        if "DAYS_EMPLOYED" in X.columns:
             is_sentinel = pl.col("DAYS_EMPLOYED") == self._SENTINEL
             is_anomalous = is_sentinel | (pl.col("DAYS_EMPLOYED") > 0)
             exprs += [
@@ -39,7 +41,7 @@ class ApplicationCleaner(TableCleaner):
             ]
             drop_cols.append("DAYS_EMPLOYED")
 
-        if "CODE_GENDER" in df.columns:
+        if "CODE_GENDER" in X.columns:
             exprs.append(
                 pl.when(pl.col("CODE_GENDER") == "XNA")
                 .then(pl.lit(None))
@@ -48,8 +50,8 @@ class ApplicationCleaner(TableCleaner):
             )
 
         if exprs:
-            df = df.with_columns(exprs)
+            X = X.with_columns(exprs)
         if drop_cols:
-            df = df.drop(drop_cols)
+            X = X.drop(drop_cols)
 
-        return df
+        return X

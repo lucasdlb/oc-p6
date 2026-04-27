@@ -5,10 +5,12 @@ from __future__ import annotations
 import polars as pl
 from polars import DataFrame
 
-from credit_risk.data.cleaning.base import TableCleaner
+from typing import override
+
+from credit_risk.data.base import StatelessStep
 
 
-class BureauCleaner(TableCleaner):
+class BureauCleaner(StatelessStep):
     """Cleaner for bureau table.
 
     DAYS_* columns use days relative to application date:
@@ -20,17 +22,12 @@ class BureauCleaner(TableCleaner):
     AMT columns: negatives and extreme outliers are data errors.
     """
 
-    # Sentinel used across multiple DAYS columns in this dataset
     _SENTINEL = 365243
-
-    # Columns where the sentinel appears
     _SENTINEL_COLS = [
         "DAYS_CREDIT_ENDDATE",
         "DAYS_ENDDATE_FACT",
         "DAYS_CREDIT_UPDATE",
     ]
-
-    # Plausible bounds for credit amounts — beyond these are data errors
     _AMT_COLS = [
         "AMT_CREDIT_MAX_OVERDUE",
         "AMT_CREDIT_SUM",
@@ -40,12 +37,12 @@ class BureauCleaner(TableCleaner):
         "AMT_ANNUITY",
     ]
 
-    def clean(self, df: DataFrame) -> DataFrame:
+    @override
+    def transform(self, X: DataFrame, y=None) -> DataFrame:
         exprs = []
 
-        # --- sentinel handling ---
         for col in self._SENTINEL_COLS:
-            if col in df.columns:
+            if col in X.columns:
                 exprs.append(
                     pl.when(pl.col(col).abs() == self._SENTINEL)
                     .then(pl.lit(None))
@@ -53,15 +50,13 @@ class BureauCleaner(TableCleaner):
                     .alias(col)
                 )
 
-        # --- negative AMT values are data errors → null ---
         for col in self._AMT_COLS:
-            if col in df.columns:
+            if col in X.columns:
                 exprs.append(
                     pl.when(pl.col(col) < 0).then(pl.lit(None)).otherwise(pl.col(col)).alias(col)
                 )
 
-        # --- CREDIT_DAY_OVERDUE: negative makes no sense → null ---
-        if "CREDIT_DAY_OVERDUE" in df.columns:
+        if "CREDIT_DAY_OVERDUE" in X.columns:
             exprs.append(
                 pl.when(pl.col("CREDIT_DAY_OVERDUE") < 0)
                 .then(pl.lit(None))
@@ -69,8 +64,7 @@ class BureauCleaner(TableCleaner):
                 .alias("CREDIT_DAY_OVERDUE")
             )
 
-        # --- CNT_CREDIT_PROLONG: shouldn't be negative ---
-        if "CNT_CREDIT_PROLONG" in df.columns:
+        if "CNT_CREDIT_PROLONG" in X.columns:
             exprs.append(
                 pl.when(pl.col("CNT_CREDIT_PROLONG") < 0)
                 .then(pl.lit(None))
@@ -79,6 +73,6 @@ class BureauCleaner(TableCleaner):
             )
 
         if exprs:
-            df = df.with_columns(exprs)
+            X = X.with_columns(exprs)
 
-        return df
+        return X

@@ -5,10 +5,12 @@ from __future__ import annotations
 import polars as pl
 from polars import DataFrame
 
-from credit_risk.data.cleaning.base import TableCleaner
+from typing import override
+
+from credit_risk.data.base import StatelessStep
 
 
-class PreviousApplicationCleaner(TableCleaner):
+class PreviousApplicationCleaner(StatelessStep):
     """Cleaner for previous_application table.
 
     Handles:
@@ -18,7 +20,6 @@ class PreviousApplicationCleaner(TableCleaner):
     """
 
     _SENTINEL = 365243
-
     _SENTINEL_COLS = [
         "DAYS_FIRST_DRAWING",
         "DAYS_FIRST_DUE",
@@ -27,12 +28,12 @@ class PreviousApplicationCleaner(TableCleaner):
         "DAYS_TERMINATION",
     ]
 
-    def clean(self, df: DataFrame) -> DataFrame:
+    @override
+    def transform(self, X: DataFrame, y=None) -> DataFrame:
         exprs = []
 
-        # --- sentinel handling — all in one pass ---
         for col in self._SENTINEL_COLS:
-            if col in df.columns:
+            if col in X.columns:
                 exprs.append(
                     pl.when(pl.col(col) == self._SENTINEL)
                     .then(pl.lit(None))
@@ -40,8 +41,7 @@ class PreviousApplicationCleaner(TableCleaner):
                     .alias(col)
                 )
 
-        # --- APP_CREDIT_PERC: ratio credit/goods, physically bounded ---
-        if "APP_CREDIT_PERC" in df.columns:
+        if "APP_CREDIT_PERC" in X.columns:
             exprs.append(
                 pl.when((pl.col("APP_CREDIT_PERC") <= 0) | (pl.col("APP_CREDIT_PERC") > 10))
                 .then(pl.lit(None))
@@ -50,6 +50,6 @@ class PreviousApplicationCleaner(TableCleaner):
             )
 
         if exprs:
-            df = df.with_columns(exprs)
+            X = X.with_columns(exprs)
 
-        return df
+        return X

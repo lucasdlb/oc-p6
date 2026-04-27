@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from polars import DataFrame
 
-from credit_risk.data.cleaning.base import TableCleaner
+from typing import override
+
+from credit_risk.data.base import StatelessStep
 
 
-class CreditCardCleaner(TableCleaner):
+class CreditCardCleaner(StatelessStep):
     """Cleaner for credit_card_balance table.
 
     No specific cleaning needed.
     """
 
-    def clean(self, df: DataFrame) -> DataFrame:
-        return df
+    @override
+    def transform(self, X: DataFrame, y=None) -> DataFrame:
+        return X

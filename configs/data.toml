@@ -83,9 +83,13 @@ bureau_balance_agg_features = ["MONTHS_BALANCE", "STATUS"]
 include = true
 cleaner = "ApplicationCleaner"
 imputer = "ApplicationImputer"
-    aggregator = "NoOpStep"
+aggregator = "NoOpStep"
 transformer = "ApplicationTransformer"
-encoder = "PolarsOneHotEncoder"
+#encoder = "PolarsOneHotEncoder"
+#encoder = "CategoricalEncoder"
+encoder = "PolarsTargetEncoder"
+
+
 
 [data.bureau]
 include = true
