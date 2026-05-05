@@ -40,17 +40,17 @@ verbose = -1
 [selection]
 min_features = 10
 tolerance = 0.005
-nb_remove_features = 0.3
+nb_remove_features = 0.2
 
 [importance]
-method = "inner"
+method = "shap"
 
 [tuning]
 n_trials = 5
 timeout = 1800
 study_name = "dev_tuning"
 direction = "maximize"
-n_jobs = 1
+n_jobs = 4
 pruner = "median"
 models = [
     "lgbm",

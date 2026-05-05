@@ -161,14 +161,29 @@ class ProcessingTuner:
 
         n_jobs = self._config.n_jobs
 
-        # Most models use n_jobs=-1 (all cores). Running Optuna trials in
-        # parallel on top of that would oversubscribe the CPU. Check whether
-        # this model's fixed params include n_jobs=-1 and force Optuna to 1.
+        # Determine whether to allow Optuna trial parallelism.
+        # - CPU models with n_jobs=-1: Optuna must be sequential (n_jobs=1)
+        #   to avoid CPU oversubscription.
+        # - GPU models (device="gpu"): each trial uses a separate process with
+        #   its own GPU context. GPU memory is small per trial (~140 MiB for
+        #   195 features), allowing concurrent trials without conflict.
+        #   Use cfg.tuning.n_jobs as configured.
         try:
             sample = suggest_params(study.ask(), model_name)
-            if sample.get("n_jobs", 1) == -1 and n_jobs != 1:
+            uses_gpu = sample.get("device") == "gpu"
+            uses_all_cpu = sample.get("n_jobs", 1) == -1
+
+            if uses_gpu:
+                # GPU: parallelism is safe and beneficial — keep cfg value
+                if n_jobs != 1:
+                    logger.info(
+                        "Model device=gpu — Optuna n_jobs=%d "
+                        "(GPU trials run in separate processes).",
+                        n_jobs,
+                    )
+            elif uses_all_cpu and n_jobs != 1:
                 logger.info(
-                    "Model n_jobs=-1 — forcing Optuna n_jobs=1 to avoid CPU oversubscription."
+                    "Model n_jobs=-1 (CPU) — forcing Optuna n_jobs=1 to avoid oversubscription."
                 )
                 n_jobs = 1
         except Exception:
