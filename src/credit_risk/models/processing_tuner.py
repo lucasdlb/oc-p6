@@ -75,6 +75,7 @@ class ProcessingTuner:
         tables: dict[str, pl.DataFrame],
         labels: pl.DataFrame,
         model_names: list[str] | None = None,
+        feature_mask: list[str] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Run sequential Optuna optimization across model types.
 
@@ -82,6 +83,9 @@ class ProcessingTuner:
             tables: Mapping of table name -> raw Polars DataFrame.
             labels: Polars DataFrame with id_column and target_column.
             model_names: List of model names to tune. Defaults to cfg.tuning.models.
+            feature_mask: Optional list of feature names to restrict CV evaluation
+                to. Should come from the best rfe_cv run so tuning is performed on
+                the same feature subset as final training.
 
         Returns:
             Dict mapping model_name -> {best_value, best_params, study}
@@ -104,7 +108,7 @@ class ProcessingTuner:
                 nan_fill=self._config.nan_fill,
             )
 
-            study = self._run_study(tables, labels, model_name, factory)
+            study = self._run_study(tables, labels, model_name, factory, feature_mask)
 
             self._results[model_name] = {
                 "best_value": study.best_value,
@@ -122,6 +126,7 @@ class ProcessingTuner:
         labels: pl.DataFrame,
         model_name: str,
         factory: ModelFactory,
+        feature_mask: list[str] | None = None,
     ) -> optuna.Study:
         """Run Optuna study for a single model type.
 
@@ -151,7 +156,12 @@ class ProcessingTuner:
         def objective(trial: optuna.Trial) -> float:
             params = suggest_params(trial, model_name)
 
-            result = cv.validate(tables=tables, labels=labels, model_params=params)
+            result = cv.validate(
+                tables=tables,
+                labels=labels,
+                model_params=params,
+                feature_mask=feature_mask,
+            )
             cv_scores = CVMetrics.compute(result, self._metrics)
             score = cv_scores.mean_scores.get("roc_auc", 0.0)
 

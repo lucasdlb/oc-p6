@@ -1,8 +1,13 @@
 #!/usr/bin/env python
 """Optuna hyperparameter tuning across all tables with zero-leakage ProcessingCV.
 
-Each Optuna trial runs a full ProcessingCV.validate() call, which performs
-per-fold fit/transform of all tables via TableTransformer.
+Zero-leakage pipeline — same structure as rfe_cv.py:
+  1. Split labels into train / test — test is locked away immediately.
+  2. Load raw tables (train IDs only).
+  3. TableTransformer fits processing pipelines on train IDs only per fold.
+  4. Feature list is loaded from the best rfe_cv_all_{mode} MLflow run and
+     applied as a feature_mask — tuning is performed on the same feature
+     subset that will be used in final_train.py.
 
 Usage:
     RUN_MODE=debug uv run python scripts/tune.py
@@ -12,7 +17,9 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import pathlib
 import warnings
 
 import mlflow
@@ -47,6 +54,52 @@ ALL_TABLES = [
 ]
 
 
+def _load_feature_mask(run_mode: str, tracking_uri: str) -> list[str] | None:
+    """Load selected features from the best rfe_cv_all_{mode} MLflow run.
+
+    Returns None if no suitable run is found — tuning will then run on all
+    features (degraded mode, with a warning).
+    """
+    experiment_name = f"rfe_cv_all_{run_mode}"
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        logger.warning(
+            "No MLflow experiment '%s' found. Run rfe_cv.py first. "
+            "Tuning will run on all features.",
+            experiment_name,
+        )
+        return None
+
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string="metrics.cv_roc_auc > 0",
+        order_by=["metrics.cv_roc_auc DESC"],
+        max_results=1,
+    )
+    if runs.empty:
+        logger.warning(
+            "No completed runs in '%s'. Tuning will run on all features.",
+            experiment_name,
+        )
+        return None
+
+    run_id = runs.iloc[0]["run_id"]
+    cv_roc_auc = runs.iloc[0]["metrics.cv_roc_auc"]
+    logger.info(
+        "Loading feature mask from run %s (cv_roc_auc=%.4f)",
+        run_id[:8],
+        cv_roc_auc,
+    )
+
+    artifact_path = mlflow.artifacts.download_artifacts(
+        run_id=run_id, artifact_path="features.json"
+    )
+    data = json.loads(pathlib.Path(artifact_path).read_text())
+    features = data["features"]
+    logger.info("Feature mask: %d features loaded", len(features))
+    return features
+
+
 def main(config=None):
     cfg = config or load_config("tuning", "model")
     run_mode = cfg.run.mode
@@ -55,6 +108,54 @@ def main(config=None):
     mlflow.set_experiment(f"{run_mode}_tuning")
     ml_logger = MlflowLogger()
 
+    # ── Load feature mask from rfe_cv ────────────────────────────────────────
+    feature_mask = _load_feature_mask(run_mode, cfg.output.mlflow_tracking_uri())
+
+    # ── Splitter ─────────────────────────────────────────────────────────────
+    splitter = TrainTestCVSplitter.from_config(cfg=cfg)
+
+    # ── Load labels, isolate train IDs — test set locked away ────────────────
+    loader = PLLazyDataLoader()
+    labels_df = loader.load_labels().collect()
+
+    ids = labels_df.select(cfg.data.target.id_column).to_numpy().ravel()
+    y_full = labels_df.select(cfg.data.target.column).to_numpy().ravel()
+    ids_train, _, _, _ = splitter.split_train_test(ids, y_full)
+
+    labels_df = labels_df.filter(pl.col(cfg.data.target.id_column).is_in(ids_train))
+
+    if cfg.run.sample_fraction < 1.0:
+        labels_df = labels_df.sample(
+            fraction=cfg.run.sample_fraction,
+            seed=cfg.run.random_state,
+        )
+
+    logger.info("Train samples: %d", len(labels_df))
+
+    # ── Load raw tables ───────────────────────────────────────────────────────
+    included_tables = [t for t in ALL_TABLES if getattr(cfg.data, t).include]
+    logger.info("Tables: %s", included_tables)
+
+    raw_tables = {}
+    for table in included_tables:
+        logger.info("Loading %s...", table)
+        raw_tables[table] = loader.load(table).collect()
+
+    # ── Build TableTransformer ────────────────────────────────────────────────
+    pipeline_factories = {
+        t: (lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)).build())
+        for t in included_tables
+    }
+    cross_transformer = TransformerRegistry.get(cfg.data.cross.transformer)()
+
+    table_transformer = TableTransformer(
+        pipeline_factories=pipeline_factories,
+        id_column=cfg.data.target.id_column,
+        target_column=cfg.data.target.column,
+        cross_transformer=cross_transformer,
+    )
+
+    # ── Run Optuna tuning ─────────────────────────────────────────────────────
     with ml_logger.start_run(run_name=f"{run_mode}_tuning"):
         ml_logger.log_flat_config(cfg)
         ml_logger.log_params(
@@ -62,45 +163,8 @@ def main(config=None):
                 "run_mode": run_mode,
                 "n_trials": cfg.tuning.n_trials,
                 "models": ",".join(cfg.tuning.models),
+                "n_features_mask": len(feature_mask) if feature_mask else "all",
             }
-        )
-
-        splitter = TrainTestCVSplitter.from_config(cfg=cfg)
-
-        loader = PLLazyDataLoader()
-        labels = loader.load_labels().collect()
-
-        ids = labels.select(cfg.data.target.id_column).to_numpy().ravel()
-        y_full = labels.select(cfg.data.target.column).to_numpy().ravel()
-        ids_train, _, _, _ = splitter.split_train_test(ids, y_full)
-
-        labels_df = labels.filter(pl.col(cfg.data.target.id_column).is_in(ids_train))
-
-        if cfg.run.sample_fraction < 1.0:
-            labels_df = labels_df.sample(
-                fraction=cfg.run.sample_fraction,
-                seed=cfg.run.random_state,
-            )
-
-        included_tables = [name for name in ALL_TABLES if getattr(cfg.data, name).include]
-        logger.info(f"Tables: {included_tables}")
-
-        raw_tables = {}
-        for table in included_tables:
-            logger.info(f"Loading {table}...")
-            raw_tables[table] = loader.load(table).collect()
-
-        pipeline_factories = {
-            t: lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)).build()
-            for t in included_tables
-        }
-        cross_transformer = TransformerRegistry.get(cfg.data.cross.transformer)()
-
-        table_transformer = TableTransformer(
-            pipeline_factories=pipeline_factories,
-            id_column=cfg.data.target.id_column,
-            target_column=cfg.data.target.column,
-            cross_transformer=cross_transformer,
         )
 
         tuner = ProcessingTuner(
@@ -111,7 +175,11 @@ def main(config=None):
             mlflow_logging=False,
         )
 
-        results = tuner.optimize(raw_tables, labels_df)
+        results = tuner.optimize(
+            raw_tables,
+            labels_df,
+            feature_mask=feature_mask,
+        )
 
         best_name = max(results, key=lambda k: results[k]["best_value"])
         ml_logger.log_params({"best_model": best_name})
@@ -120,7 +188,7 @@ def main(config=None):
         logger.info("=" * 60)
         logger.info("Results:")
         for name, result in results.items():
-            logger.info(f"  {name}: ROC AUC = {result['best_value']:.4f}")
+            logger.info("  %s: ROC AUC = %.4f", name, result["best_value"])
         logger.info("=" * 60)
 
     return results
