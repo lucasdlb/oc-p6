@@ -36,6 +36,9 @@ def _suggest_lgbm(trial: optuna.Trial) -> dict[str, Any]:
         "n_jobs": -1,
         "verbose": -1,
         "random_state": 42,
+        # GPU acceleration
+        "device": "gpu",
+        "gpu_use_dp": True,  # double precision — lifts max_bin GPU limit
         # Objective fixed — cross_entropy is an alias; cross_entropy_lambda
         # outputs raw logits which distorts cross-trial ROC AUC comparisons.
         "objective": "binary",
