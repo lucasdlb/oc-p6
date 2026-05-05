@@ -3,7 +3,8 @@
 Design rules
 ------------
 - Seeds fixed to 42, never tuned.
-- Operational params (n_jobs, verbose) excluded.
+- Operational params (n_jobs, verbose) set as fixed values per model — only
+  for params the model actually accepts, avoiding unknown-kwarg errors.
 - All conditionals encoded directly in per-model suggest functions — no
   flat dict that pretends params are independent when they aren't.
 - class imbalance: never "balanced" or None — always explicit pos weight
@@ -13,10 +14,8 @@ Public API
 ----------
 suggest_params(trial, model_name) -> dict
     Single entry point used by the Optuna objective. Returns a fully
-    valid param dict for the given model with all conditionals resolved.
-
-FIXED
-    Constants injected at model instantiation time (not searched).
+    valid param dict for the given model with all conditionals resolved
+    and fixed operational constants included.
 """
 
 from __future__ import annotations
@@ -25,23 +24,18 @@ from typing import Any
 
 import optuna
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-FIXED: dict[str, Any] = {
-    "random_state": 42,
-    "seed": 42,
-    "n_jobs": -1,
-    "verbose": -1,
-    # Objective fixed to binary — cross_entropy is an alias, cross_entropy_lambda
-    # outputs raw logits which distorts cross-trial comparisons.
-    "objective": "binary",
-}
-
 # ── Per-model suggest functions ───────────────────────────────────────────────
 
 
 def _suggest_lgbm(trial: optuna.Trial) -> dict[str, Any]:
     params: dict[str, Any] = {
+        # Fixed operational params
+        "n_jobs": -1,
+        "verbose": -1,
+        "random_state": 42,
+        # Objective fixed — cross_entropy is an alias; cross_entropy_lambda
+        # outputs raw logits which distorts cross-trial ROC AUC comparisons.
+        "objective": "binary",
         # Core
         "n_estimators": trial.suggest_int("n_estimators", 200, 2000),
         "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.1, log=True),
@@ -88,6 +82,10 @@ def _suggest_lgbm(trial: optuna.Trial) -> dict[str, Any]:
 
 def _suggest_xgboost(trial: optuna.Trial) -> dict[str, Any]:
     params: dict[str, Any] = {
+        # Fixed operational params
+        "n_jobs": -1,
+        "verbosity": 0,
+        "random_state": 42,
         # Core
         "n_estimators": trial.suggest_int("n_estimators", 200, 2000),
         "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.15, log=True),
@@ -120,6 +118,10 @@ def _suggest_xgboost(trial: optuna.Trial) -> dict[str, Any]:
 
 def _suggest_catboost(trial: optuna.Trial) -> dict[str, Any]:
     params: dict[str, Any] = {
+        # Fixed operational params — CatBoost uses thread_count, random_seed
+        "thread_count": -1,
+        "verbose": 0,
+        "random_seed": 42,
         # Core
         "iterations": trial.suggest_int("iterations", 500, 5000),
         "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.15, log=True),
@@ -163,16 +165,15 @@ def _suggest_catboost(trial: optuna.Trial) -> dict[str, Any]:
     elif bootstrap in ("Bernoulli", "MVS"):
         params["subsample"] = trial.suggest_float("subsample", 0.4, 1.0)
 
-    if grow_policy == "Lossguide":
-        params["score_function"] = trial.suggest_categorical("score_function", ["Cosine", "L2"])
-    else:
-        params["score_function"] = trial.suggest_categorical("score_function", ["Cosine", "L2"])
+    params["score_function"] = trial.suggest_categorical("score_function", ["Cosine", "L2"])
 
     return params
 
 
 def _suggest_hist_gbm(trial: optuna.Trial) -> dict[str, Any]:
+    # HistGradientBoostingClassifier has no n_jobs or verbose params
     return {
+        "random_state": 42,
         "max_iter": trial.suggest_int("max_iter", 200, 3000),
         "max_depth": trial.suggest_int("max_depth", 3, 20),
         "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 7, 511),
@@ -190,6 +191,9 @@ def _suggest_hist_gbm(trial: optuna.Trial) -> dict[str, Any]:
 
 def _suggest_random_forest(trial: optuna.Trial) -> dict[str, Any]:
     params: dict[str, Any] = {
+        # Fixed operational params
+        "n_jobs": -1,
+        "random_state": 42,
         "n_estimators": trial.suggest_int("n_estimators", 50, 500),
         "max_depth": trial.suggest_int("max_depth", 3, 30),
         "min_samples_split": trial.suggest_int("min_samples_split", 2, 50),
@@ -212,7 +216,10 @@ def _suggest_random_forest(trial: optuna.Trial) -> dict[str, Any]:
 
 
 def _suggest_extra_trees(trial: optuna.Trial) -> dict[str, Any]:
-    params: dict[str, Any] = {
+    return {
+        # Fixed operational params
+        "n_jobs": -1,
+        "random_state": 42,
         "n_estimators": trial.suggest_int("n_estimators", 50, 500),
         "max_depth": trial.suggest_int("max_depth", 3, 30),
         "min_samples_split": trial.suggest_int("min_samples_split", 2, 50),
@@ -226,13 +233,13 @@ def _suggest_extra_trees(trial: optuna.Trial) -> dict[str, Any]:
         "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
         "class_weight": {0: 1, 1: trial.suggest_float("pos_weight", 5.0, 15.0)},
     }
-    return params
 
 
 def _suggest_gradient_boosting(trial: optuna.Trial) -> dict[str, Any]:
-    # GradientBoostingClassifier does not support class_weight —
-    # use sample_weight at fit() time instead.
+    # GradientBoostingClassifier has no n_jobs param.
+    # class_weight not supported — use sample_weight at fit() time instead.
     return {
+        "random_state": 42,
         "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
         "max_depth": trial.suggest_int("max_depth", 3, 20),
@@ -253,6 +260,9 @@ def _suggest_gradient_boosting(trial: optuna.Trial) -> dict[str, Any]:
 
 def _suggest_lr(trial: optuna.Trial) -> dict[str, Any]:
     params: dict[str, Any] = {
+        # Fixed operational params
+        "n_jobs": -1,
+        "random_state": 42,
         "C": trial.suggest_float("C", 1e-4, 100.0, log=True),
         "max_iter": trial.suggest_int("max_iter", 200, 5000),
         "tol": trial.suggest_float("tol", 1e-6, 1e-2, log=True),
@@ -278,7 +288,9 @@ def _suggest_lr(trial: optuna.Trial) -> dict[str, Any]:
 
 
 def _suggest_ridge(trial: optuna.Trial) -> dict[str, Any]:
+    # RidgeClassifier has no n_jobs param
     return {
+        "random_state": 42,
         "alpha": trial.suggest_float("alpha", 1e-4, 100.0, log=True),
         "solver": trial.suggest_categorical(
             "solver", ["auto", "svd", "cholesky", "lsqr", "sag", "saga"]
@@ -291,7 +303,9 @@ def _suggest_ridge(trial: optuna.Trial) -> dict[str, Any]:
 
 
 def _suggest_svm(trial: optuna.Trial) -> dict[str, Any]:
+    # SVC has no n_jobs param
     params: dict[str, Any] = {
+        "random_state": 42,
         "C": trial.suggest_float("C", 1e-4, 100.0, log=True),
         "shrinking": trial.suggest_categorical("shrinking", [True, False]),
         "tol": trial.suggest_float("tol", 1e-6, 1e-2, log=True),
@@ -303,16 +317,13 @@ def _suggest_svm(trial: optuna.Trial) -> dict[str, Any]:
     kernel = trial.suggest_categorical("kernel", ["rbf", "linear", "poly", "sigmoid"])
     params["kernel"] = kernel
 
-    # gamma meaningful for rbf, poly, sigmoid
     if kernel in ("rbf", "poly", "sigmoid"):
         params["gamma"] = trial.suggest_float("gamma", 1e-6, 10.0, log=True)
 
-    # degree and coef0 only for poly
     if kernel == "poly":
         params["degree"] = trial.suggest_int("degree", 2, 5)
         params["coef0"] = trial.suggest_float("coef0", -5.0, 5.0)
 
-    # coef0 also used by sigmoid
     if kernel == "sigmoid":
         params["coef0"] = trial.suggest_float("coef0_sigmoid", -5.0, 5.0)
 
@@ -338,9 +349,9 @@ _SUGGEST_FN = {
 def suggest_params(trial: optuna.Trial, model_name: str) -> dict[str, Any]:
     """Suggest hyperparameters for a given model — single entry point.
 
-    All conditionals are resolved here. FIXED constants (n_jobs, verbose,
-    random_state, seed) are merged in so the returned dict is complete and
-    ready to pass directly to the model factory.
+    All conditionals and fixed operational constants (n_jobs, verbose,
+    random_state, etc.) are included in the returned dict.  Each model
+    only receives the params it actually accepts — no unknown-kwarg errors.
 
     Args:
         trial: Optuna trial.
@@ -350,10 +361,9 @@ def suggest_params(trial: optuna.Trial, model_name: str) -> dict[str, Any]:
         KeyError: If model_name has no registered suggest function.
 
     Returns:
-        Dict of hyperparameters with all conditionals resolved and FIXED
-        constants merged in.
+        Dict of hyperparameters with all conditionals resolved.
     """
     fn = _SUGGEST_FN.get(model_name)
     if fn is None:
         raise KeyError(f"No suggest function for '{model_name}'. Available: {list(_SUGGEST_FN)}")
-    return {**FIXED, **fn(trial)}
+    return fn(trial)
