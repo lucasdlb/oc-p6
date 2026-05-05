@@ -32,6 +32,9 @@ FIXED: dict[str, Any] = {
     "seed": 42,
     "n_jobs": -1,
     "verbose": -1,
+    # Objective fixed to binary — cross_entropy is an alias, cross_entropy_lambda
+    # outputs raw logits which distorts cross-trial comparisons.
+    "objective": "binary",
 }
 
 # ── Per-model suggest functions ───────────────────────────────────────────────
@@ -58,11 +61,6 @@ def _suggest_lgbm(trial: optuna.Trial) -> dict[str, Any]:
         "max_bin": trial.suggest_int("max_bin", 50, 1000),
         # Imbalance — explicit pos weight, never is_unbalance (they conflict)
         "scale_pos_weight": trial.suggest_float("scale_pos_weight", 5.0, 15.0),
-        # Objective / metric
-        "objective": trial.suggest_categorical(
-            "objective", ["binary", "cross_entropy", "cross_entropy_lambda"]
-        ),
-        "metric": trial.suggest_categorical("metric", ["auc", "binary_logloss"]),
     }
 
     # ── Boosting type with its conditionals ───────────────────────────────────
