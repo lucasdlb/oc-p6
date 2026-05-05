@@ -149,22 +149,22 @@ def _suggest_catboost(trial: optuna.Trial) -> dict[str, Any]:
     )
     params["grow_policy"] = grow_policy
 
-    # leaf_estimation_method: Exact only valid for SymmetricTree
-    if grow_policy == "SymmetricTree":
-        params["leaf_estimation_method"] = trial.suggest_categorical(
-            "leaf_estimation_method", ["Newton", "Gradient", "Exact"]
-        )
-        params["score_function"] = trial.suggest_categorical("score_function", ["Cosine", "L2"])
-    elif grow_policy == "Depthwise":
-        params["leaf_estimation_method"] = trial.suggest_categorical(
-            "leaf_estimation_method", ["Newton", "Gradient"]
-        )
-        params["score_function"] = trial.suggest_categorical("score_function", ["Cosine", "L2"])
-    else:  # Lossguide — score_function must be L2
-        params["leaf_estimation_method"] = trial.suggest_categorical(
-            "leaf_estimation_method", ["Newton", "Gradient"]
-        )
-        params["score_function"] = "L2"
+    # leaf_estimation_method: always suggest from the full set to keep the
+    # distribution stable across trials (Optuna forbids dynamic value spaces).
+    # "Exact" is only valid for SymmetricTree — clamp to "Newton" otherwise.
+    leaf_method = trial.suggest_categorical(
+        "leaf_estimation_method", ["Newton", "Gradient", "Exact"]
+    )
+    if leaf_method == "Exact" and grow_policy != "SymmetricTree":
+        leaf_method = "Newton"
+    params["leaf_estimation_method"] = leaf_method
+
+    # score_function: Lossguide requires L2 — always suggest from full set,
+    # clamp to L2 for Lossguide.
+    score_fn = trial.suggest_categorical("score_function", ["Cosine", "L2"])
+    if grow_policy == "Lossguide":
+        score_fn = "L2"
+    params["score_function"] = score_fn
 
     # bootstrap_type drives bagging_temperature vs subsample
     bootstrap = trial.suggest_categorical("bootstrap_type", ["Bayesian", "Bernoulli", "MVS", "No"])
