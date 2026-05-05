@@ -56,6 +56,7 @@ class ProcessingCV:
         tables: dict[str, pl.DataFrame],
         labels: pl.DataFrame,
         model_params: dict[str, Any] | None = None,
+        feature_mask: list[str] | None = None,
     ) -> CVResult:
         """Run zero-leakage cross-validation.
 
@@ -63,9 +64,14 @@ class ProcessingCV:
             tables: Mapping of table name → raw Polars DataFrame.
             labels: Polars DataFrame with id_column and target_column columns.
             model_params: Hyperparameters for the model pipeline.
+            feature_mask: Optional list of feature names to restrict to after
+                processing.  When set, only these features are passed to the
+                model; importances are aligned to this subset.  Useful for
+                BackwardFeatureSelector to evaluate a feature subset without
+                re-processing raw tables from scratch.
 
         Returns:
-            CVResult with fold_results populated.
+            CVResult with fold_results and feature_names populated.
         """
         model_params = model_params or {}
 
@@ -74,6 +80,7 @@ class ProcessingCV:
 
         n_splits = self.splitter.n_splits
         fold_results: list[FoldResult] = []
+        active_feature_names: list[str] = []
 
         for fold_idx, (fold_train_idx, fold_val_idx) in enumerate(self.splitter.split_cv(ids, y)):
             if self.verbose:
@@ -85,6 +92,21 @@ class ProcessingCV:
             X_train, X_val, y_train, y_val, feature_names = self.table_transformer.fit_transform(
                 tables, labels, fold_train_ids, fold_val_ids
             )
+
+            # Apply feature mask: restrict to the requested subset.
+            # Features in the mask that were dropped by the encoder in this
+            # fold (e.g. high-cardinality columns near max_categories boundary)
+            # are silently skipped — the model sees a slightly smaller set for
+            # that fold, which is acceptable.
+            if feature_mask is not None:
+                available = set(feature_names)
+                fold_mask = [f for f in feature_mask if f in available]
+                mask_idx = [feature_names.index(f) for f in fold_mask]
+                X_train = X_train[:, mask_idx]
+                X_val = X_val[:, mask_idx]
+                active_feature_names = fold_mask
+            else:
+                active_feature_names = feature_names
 
             if self.verbose:
                 pos_rate = y_train.mean()
@@ -116,4 +138,5 @@ class ProcessingCV:
             n_folds=n_splits,
             n_features=X_train.shape[1] if fold_results else 0,
             fold_results=fold_results,
+            feature_names=active_feature_names,
         )

@@ -2,7 +2,7 @@
 
 [run]
 mode = "dev"
-sample_fraction = 0.3
+sample_fraction = 0.5
 random_state = 42
 
 [splitter]
@@ -56,6 +56,8 @@ models = [
     "lgbm",
     "hist_gbm",
 ]
+x_transform = "none"
+#nan_fill = "none"
 
 [resampling]
 enabled = false

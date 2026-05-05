@@ -14,9 +14,9 @@ application = "data/application_train.csv"
 bureau = "data/bureau.csv"
 bureau_balance = "data/bureau_balance.csv"
 previous_application = "data/previous_application.csv"
-pos_cash = "data/POS_CASH_balance.csv"
+pos_cash_balance = "data/POS_CASH_balance.csv"
 installments = "data/installments_payments.csv"
-credit_card = "data/credit_card_balance.csv"
+credit_card_balance = "data/credit_card_balance.csv"
 
 [data.features]
 drop_always = ["SK_ID_CURR", "SK_ID_BUREAU", "SK_ID_PREV"]
@@ -37,49 +37,8 @@ categorical = [
 ]
 ext_source = ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
 
-bureau_agg_features = [
-    "DAYS_CREDIT",
-    "CREDIT_DAY_OVERDUE",
-    "CNT_CREDIT_PROLONG",
-    "AMT_CREDIT_SUM_OVERDUE",
-    "AMT_CREDIT_SUM",
-    "AMT_ANNUITY",
-]
-previous_app_agg_features = [
-    "AMT_ANNUITY",
-    "AMT_APPLICATION",
-    "AMT_CREDIT",
-    "AMT_DOWN_PAYMENT",
-    "DAYS_DECISION",
-    "CNT_PAYMENT",
-]
-installments_agg_features = [
-    "NUM_INSTALMENT_NUMBER",
-    "NUM_INSTALMENT_VERSION",
-    "DAYS_INSTALMENT",
-    "DAYS_ENTRY_PAYMENT",
-    "AMT_INSTALMENT",
-    "AMT_PAYMENT",
-]
-pos_cash_agg_features = [
-    "MONTHS_BALANCE",
-    "CNT_INSTALMENT",
-    "CNT_INSTALMENT_FUTURE",
-    "SK_DPD",
-    "SK_DPD_DEF",
-]
-credit_card_agg_features = [
-    "MONTHS_BALANCE",
-    "AMT_BALANCE",
-    "AMT_CREDIT_LIMIT_ACTUAL",
-    "AMT_DRAWINGS_ATM_CURRENT",
-    "AMT_DRAWINGS_CURRENT",
-    "AMT_PAYMENT_CURRENT",
-    "CNT_INSTALMENT_MATURE_CUM",
-    "SK_DPD",
-    "SK_DPD_DEF",
-]
-bureau_balance_agg_features = ["MONTHS_BALANCE", "STATUS"]
+[data.cross]
+transformer = "CrossTableTransformer"
 
 [data.application]
 include = true
@@ -96,7 +55,7 @@ encoder = "PolarsTargetEncoder"
 [data.bureau]
 include = true
 cleaner = "BureauCleaner"
-imputer = "BureauImputer"
+imputer = "NoOpStep"
 aggregator = "BureauAggregator"
 transformer = "BureauTransformer"
 encoder = "PolarsOneHotEncoder"
@@ -104,39 +63,39 @@ encoder = "PolarsOneHotEncoder"
 [data.bureau_balance]
 include = true
 cleaner = "BureauBalanceCleaner"
-imputer = "BureauBalanceImputer"
+imputer = "NoOpStep"
 aggregator = "BureauBalanceAggregator"
 transformer = "BureauBalanceTransformer"
-encoder = "PolarsOneHotEncoder"
+encoder = "NoOpStep"
 
 [data.previous_application]
 include = true
 cleaner = "PreviousApplicationCleaner"
-imputer = "PreviousApplicationImputer"
+imputer = "NoOpStep"
 aggregator = "PreviousApplicationAggregator"
 transformer = "PreviousApplicationTransformer"
 encoder = "PolarsOneHotEncoder"
 
-[data.pos_cash]
+[data.pos_cash_balance]
 include = true
-cleaner = "POSCashCleaner"
-imputer = "POSCashImputer"
-aggregator = "POSCashAggregator"
-transformer = "POSCashTransformer"
+cleaner = "POSCashBalanceCleaner"
+imputer = "NoOpStep"
+aggregator = "POSCashBalanceAggregator"
+transformer = "POSCashBalanceTransformer"
 encoder = "PolarsOneHotEncoder"
 
 [data.installments]
 include = true
 cleaner = "InstallmentsCleaner"
-imputer = "InstallmentsImputer"
+imputer = "NoOpStep"
 aggregator = "InstallmentsAggregator"
 transformer = "InstallmentsTransformer"
-encoder = "PolarsOneHotEncoder"
+encoder = "NoOpStep"
 
-[data.credit_card]
+[data.credit_card_balance]
 include = true
-cleaner = "CreditCardCleaner"
-imputer = "CreditCardImputer"
-aggregator = "CreditCardAggregator"
-transformer = "CreditCardTransformer"
+cleaner = "CreditCardBalanceCleaner"
+imputer = "NoOpStep"
+aggregator = "CreditCardBalanceAggregator"
+transformer = "CreditCardBalanceTransformer"
 encoder = "PolarsOneHotEncoder"

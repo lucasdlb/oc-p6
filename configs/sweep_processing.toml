@@ -1,15 +1,69 @@
-# Sweep processing configurations for application table
-# List values become sweep axes (cartesian product)
+# sweep_processing.toml — processing configuration grid search
+#
+# Each table section defines sweep axes for that table's processing steps.
+# Lists → sweep axes (Cartesian product across all axes for that table).
+# Scalars → fixed overrides applied to all runs for that table.
+# Missing keys → fall through to data.toml defaults.
+#
+# The sweep evaluates each table in isolation (single-table CV).
+# Once best config per table is found, update data.toml accordingly.
+#
+# Run:
+#   RUN_MODE=debug uv run python scripts/sweep_processing.py
+#   RUN_MODE=dev   uv run python scripts/sweep_processing.py
 
+# ---------------------------------------------------------------------------
+# application — encoder strategy is the main variable
+# ---------------------------------------------------------------------------
 [data.application]
-include = true
-cleaner = "ApplicationCleaner"
-imputer = "ApplicationImputer"
-aggregator = "NoOpStep"
-transformer = ["NoOpStep", "ApplicationTransformer"]
-encoder = ["PolarsTargetEncoder", "CategoricalEncoder", "PolarsOneHotEncoder"]
+encoder = ["PolarsTargetEncoder", "PolarsOneHotEncoder", "CategoricalEncoder"]
 
-# Can add more axes, e.g.:
-# [data.bureau]
-# aggregator = ["BureauAggregator", "NoOpStep"]
-# encoder = ["PolarsTargetEncoder", "PolarsOneHotEncoder"]
+# ---------------------------------------------------------------------------
+# bureau — encoder strategy
+# ---------------------------------------------------------------------------
+[data.bureau]
+encoder = ["PolarsOneHotEncoder", "PolarsTargetEncoder", "CategoricalEncoder"]
+
+# ---------------------------------------------------------------------------
+# bureau_balance — aggregation depth is the key variable (no encoder needed)
+# ---------------------------------------------------------------------------
+[data.bureau_balance]
+aggregator = [
+    "MinimalBureauBalanceAggregator",
+    "DefaultBureauBalanceAggregator",
+    "DetailedBureauBalanceAggregator",
+]
+
+# ---------------------------------------------------------------------------
+# previous_application — encoder strategy
+# ---------------------------------------------------------------------------
+[data.previous_application]
+encoder = ["PolarsOneHotEncoder", "PolarsTargetEncoder", "CategoricalEncoder"]
+
+# ---------------------------------------------------------------------------
+# pos_cash_balance — encoder strategy
+# ---------------------------------------------------------------------------
+[data.pos_cash_balance]
+encoder = ["PolarsOneHotEncoder", "PolarsTargetEncoder", "CategoricalEncoder"]
+
+# ---------------------------------------------------------------------------
+# installments — aggregation depth × transformer on/off
+# ---------------------------------------------------------------------------
+[data.installments]
+aggregator = [
+    "MinimalInstallmentsAggregator",
+    "DefaultInstallmentsAggregator",
+    "DetailedInstallmentsAggregator",
+]
+transformer = ["InstallmentsTransformer", "NoOpStep"]
+
+# ---------------------------------------------------------------------------
+# credit_card_balance — aggregation depth × encoder strategy
+# ---------------------------------------------------------------------------
+[data.credit_card_balance]
+aggregator = [
+    "MinimalCreditCardAggregator",
+    "DefaultCreditCardAggregator",
+    "DetailedCreditCardAggregator",
+]
+encoder = ["PolarsOneHotEncoder", "PolarsTargetEncoder", "CategoricalEncoder"]

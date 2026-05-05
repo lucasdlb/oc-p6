@@ -51,6 +51,8 @@ direction = "maximize"
 n_jobs = 1
 pruner = "median"
 models = ["lgbm"]
+x_transform = "none"
+nan_fill = 0
 
 [resampling]
 enabled = false

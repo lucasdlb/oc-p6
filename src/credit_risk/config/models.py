@@ -44,6 +44,7 @@ class ModelConfig(BaseModel):
 
     model_type: str
     x_transform: str = "none"
+    nan_fill: float | Literal["median_mode"] | None = None
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -117,6 +118,8 @@ class TuningConfig(BaseModel):
     n_jobs: int = Field(default=1, ge=1)
     pruner: Literal["median", "hyperband", "none"] = "none"
     models: list[str] = Field(default_factory=lambda: ["lgbm"])
+    x_transform: str = "none"
+    nan_fill: float | Literal["median_mode"] | None = None
 
     @classmethod
     def from_toml(cls) -> "TuningConfig":
@@ -198,9 +201,9 @@ class DataSourceFiles(BaseModel):
     bureau: str = "bureau.csv"
     bureau_balance: str = "bureau_balance.csv"
     previous_application: str = "previous_application.csv"
-    pos_cash: str = "POS_CASH_balance.csv"
+    pos_cash_balance: str = "POS_CASH_balance.csv"
     installments: str = "installments_payments.csv"
-    credit_card: str = "credit_card_balance.csv"
+    credit_card_balance: str = "credit_card_balance.csv"
 
 
 class TargetConfig(BaseModel):
@@ -221,12 +224,16 @@ class FeaturesConfig(BaseModel):
         default_factory=lambda: ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
     )
 
-    bureau_agg_features: list[str] = Field(default_factory=list)
-    previous_app_agg_features: list[str] = Field(default_factory=list)
-    installments_agg_features: list[str] = Field(default_factory=list)
-    pos_cash_agg_features: list[str] = Field(default_factory=list)
-    credit_card_agg_features: list[str] = Field(default_factory=list)
-    bureau_balance_agg_features: list[str] = Field(default_factory=list)
+
+class CrossConfig(BaseModel):
+    """Cross-table feature engineering configuration.
+
+    Set transformer = "CrossTableTransformer" to enable cross features.
+    Set transformer = "NoOpStep" (default) to disable.
+    The name is resolved via TransformerRegistry.
+    """
+
+    transformer: str = "NoOpStep"
 
 
 class TableConfig(BaseModel):
@@ -252,14 +259,15 @@ class DataConfig(BaseModel):
     target: TargetConfig = Field(default_factory=TargetConfig)
     sources: DataSourceFiles = Field(default_factory=DataSourceFiles)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    cross: CrossConfig = Field(default_factory=CrossConfig)
 
     application: TableConfig = Field(default_factory=TableConfig)
     bureau: TableConfig = Field(default_factory=TableConfig)
     bureau_balance: TableConfig = Field(default_factory=TableConfig)
     previous_application: TableConfig = Field(default_factory=TableConfig)
-    pos_cash: TableConfig = Field(default_factory=TableConfig)
+    pos_cash_balance: TableConfig = Field(default_factory=TableConfig)
     installments: TableConfig = Field(default_factory=TableConfig)
-    credit_card: TableConfig = Field(default_factory=TableConfig)
+    credit_card_balance: TableConfig = Field(default_factory=TableConfig)
 
 
 # -----------------------------------------------------------------------------

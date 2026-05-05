@@ -40,7 +40,7 @@ nb_remove_features = 0.3
 method = "inner"
 
 [tuning]
-n_trials = 30
+n_trials = 5
 timeout = 7200
 study_name = "prod_tuning"
 direction = "maximize"
@@ -50,6 +50,7 @@ models = [
     "lgbm",
     "hist_gbm",
 ]
+x_transform = "none"
 
 [resampling]
 enabled = false

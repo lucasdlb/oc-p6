@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Optuna hyperparameter tuning across ALL tables.
+"""Optuna hyperparameter tuning across all tables with zero-leakage ProcessingCV.
 
-Loads, cleans, imputes, aggregates ALL tables, joins on SK_ID_CURR,
-then tunes multiple models using Optuna sequential optimization.
+Each Optuna trial runs a full ProcessingCV.validate() call, which performs
+per-fold fit/transform of all tables via TableTransformer.
 
 Usage:
     RUN_MODE=debug uv run python scripts/tune.py
@@ -16,155 +16,115 @@ import logging
 import warnings
 
 import mlflow
+import polars as pl
 
 from credit_risk.config import load_config
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.data.store import FeatureStore
+from credit_risk.data.transformation import TransformerRegistry
 from credit_risk.mlflow_utils import MlflowLogger
 from credit_risk.models.metrics import ClassificationRankingMetrics
+from credit_risk.models.processing_tuner import ProcessingTuner
 from credit_risk.models.splitter import TrainTestCVSplitter
-from credit_risk.models.tuner import ManyModelOptunaTuner
 from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
+from credit_risk.pipeline.table_transformer import TableTransformer
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-TABLES = [
+ALL_TABLES = [
     "application",
     "bureau",
     "bureau_balance",
     "previous_application",
-    "pos_cash",
+    "pos_cash_balance",
     "installments",
-    "credit_card",
+    "credit_card_balance",
 ]
 
-LOADER_KEYS = {
-    "application": "application",
-    "bureau": "bureau",
-    "bureau_balance": "bureau_balance",
-    "previous_application": "previous_application",
-    "pos_cash": "pos_cash_balance",
-    "installments": "installments_payments",
-    "credit_card": "credit_card_balance",
-}
 
-USE_SELECTED_FEATURES = True
+def main(config=None):
+    cfg = config or load_config("tuning", "model")
+    run_mode = cfg.run.mode
 
-cfg = load_config("tuning")
-run_mode = cfg.run.mode
-logger.info(f"Running tuning in mode: {run_mode}")
+    mlflow.set_tracking_uri(cfg.output.mlflow_tracking_uri())
+    mlflow.set_experiment(f"{run_mode}_tuning")
+    ml_logger = MlflowLogger()
 
-mlflow.set_tracking_uri(cfg.output.mlflow_tracking_uri())
-mlflow.set_experiment(f"{run_mode}_tuning")
-ml_logger = MlflowLogger()
+    with ml_logger.start_run(run_name=f"{run_mode}_tuning"):
+        ml_logger.log_flat_config(cfg)
+        ml_logger.log_params(
+            {
+                "run_mode": run_mode,
+                "n_trials": cfg.tuning.n_trials,
+                "models": ",".join(cfg.tuning.models),
+            }
+        )
 
-with ml_logger.start_run(run_name=f"{run_mode}_tuning"):
-    ml_logger.log_flat_config(cfg)
-    ml_logger.log_params({"run_mode": run_mode, "n_trials": cfg.tuning.n_trials})
-    ml_logger.log_params({"models": ",".join(cfg.tuning.models)})
+        splitter = TrainTestCVSplitter.from_config(cfg=cfg)
 
-    models_to_tune = cfg.tuning.models
-    logger.info(f"Models to tune: {models_to_tune}, Trials: {cfg.tuning.n_trials}")
+        loader = PLLazyDataLoader()
+        labels = loader.load_labels().collect()
 
-    splitter = TrainTestCVSplitter(
-        test_size=cfg.splitter.test_size,
-        n_splits=cfg.splitter.n_splits,
-        cv_random_state=cfg.splitter.random_state,
-        stratify=True,
-    )
-    metrics = ClassificationRankingMetrics()
+        ids = labels.select(cfg.data.target.id_column).to_numpy().ravel()
+        y_full = labels.select(cfg.data.target.column).to_numpy().ravel()
+        ids_train, _, _, _ = splitter.split_train_test(ids, y_full)
 
-    logger.info(f"CV: {cfg.splitter.n_splits} splits, Trials: {cfg.tuning.n_trials}")
+        labels_df = labels.filter(pl.col(cfg.data.target.id_column).is_in(ids_train))
 
-    sample_frac = cfg.run.sample_fraction
-    if sample_frac < 1.0:
-        logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
+        if cfg.run.sample_fraction < 1.0:
+            labels_df = labels_df.sample(
+                fraction=cfg.run.sample_fraction,
+                seed=cfg.run.random_state,
+            )
 
-    logger.info("Loading data...")
-    loader = PLLazyDataLoader()
-    labels = loader.load_labels()
-    if sample_frac < 1.0:
-        labels = labels.collect().sample(fraction=sample_frac, seed=cfg.run.random_state).lazy()
+        included_tables = [name for name in ALL_TABLES if getattr(cfg.data, name).include]
+        logger.info(f"Tables: {included_tables}")
 
-    features_list = []
-    for table in TABLES:
-        logger.info(f"Processing table: {table}")
+        raw_tables = {}
+        for table in included_tables:
+            logger.info(f"Loading {table}...")
+            raw_tables[table] = loader.load(table).collect()
 
-        df = loader.load(LOADER_KEYS[table]).join(labels, on="SK_ID_CURR", how="inner")
-        df = df.collect()
-
-        logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
-
-        table_cfg = getattr(cfg.data, table)
-        df = ProcessingPipeline(table_cfg).fit_transform(df)
-
-        id_cols = [c for c in df.columns if c.startswith("SK_ID")]
-        feature_cols = [c for c in df.columns if c not in id_cols + ["TARGET"]]
-        features_list.append(df.select(["SK_ID_CURR"] + feature_cols))
-
-    logger.info(f"Joining {len(features_list)} tables with labels...")
-
-    combined = labels.lazy()
-    for i, df in enumerate(features_list):
-        combined = combined.join(df.lazy(), on="SK_ID_CURR", how="left", suffix=f"_{i}")
-
-    combined = combined.collect()
-
-    logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
-
-    target_col = cfg.data.target.column
-    id_col = cfg.data.target.id_column
-
-    if USE_SELECTED_FEATURES:
-        store = FeatureStore(root=cfg.output.features_path)
-        all_selected, _ = store.load_tables(TABLES, suffix=f"_{run_mode}")
-        all_selected = list(set(all_selected))
-        available_cols = set(combined.columns) - {target_col, id_col}
-        feature_cols = [c for c in all_selected if c in available_cols]
-    else:
-        feature_cols = [c for c in combined.columns if c not in [target_col, id_col]]
-
-    X = combined.select(feature_cols).to_pandas().values
-    y = combined.select(target_col).to_numpy().ravel()
-
-    logger.info(f"Data shape: {X.shape}, Features: {len(feature_cols)}")
-
-    logger.info("Starting tuning...")
-    tuner = ManyModelOptunaTuner(
-        splitter=splitter,
-        metrics=metrics,
-        tuning_config=cfg.tuning,
-        mlflow_logging=True,
-    )
-
-    logger.info(f"Tuning models sequentially: {models_to_tune}")
-    results = tuner.optimize_sequential(X, y, models_to_tune)
-
-    logger.info("Training final model...")
-    final_model, best_model_name, all_results = tuner.get_best_model(X, y)
-
-    ml_logger.log_flat_config(cfg)
-    ml_logger.log_metrics(
-        {
-            f"{model_name}_roc_auc": result["best_value"]
-            for model_name, result in all_results.items()
+        pipeline_factories = {
+            t: lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)).build()
+            for t in included_tables
         }
-    )
-    ml_logger.log_params(all_results[best_model_name]["best_params"])
-    ml_logger.log_metric("best_roc_auc", all_results[best_model_name]["best_value"])
-    ml_logger.log_param("best_model", best_model_name)
-    ml_logger.log_model(final_model, "best_model")
+        cross_transformer = TransformerRegistry.get(cfg.data.cross.transformer)()
 
-    logger.info(f"Best model: {best_model_name}")
+        table_transformer = TableTransformer(
+            pipeline_factories=pipeline_factories,
+            id_column=cfg.data.target.id_column,
+            target_column=cfg.data.target.column,
+            cross_transformer=cross_transformer,
+        )
 
-    logger.info("=" * 60)
-    logger.info("All models summary:")
-    for model_name, result in all_results.items():
-        logger.info(f"  {model_name}: ROC AUC = {result['best_value']:.4f}")
-    logger.info("=" * 60)
+        tuner = ProcessingTuner(
+            table_transformer=table_transformer,
+            splitter=splitter,
+            tuning_config=cfg.tuning,
+            metrics=ClassificationRankingMetrics(),
+            mlflow_logging=False,
+        )
+
+        results = tuner.optimize(raw_tables, labels_df)
+
+        best_name = max(results, key=lambda k: results[k]["best_value"])
+        ml_logger.log_params({"best_model": best_name})
+        ml_logger.log_metric("best_roc_auc", results[best_name]["best_value"])
+
+        logger.info("=" * 60)
+        logger.info("Results:")
+        for name, result in results.items():
+            logger.info(f"  {name}: ROC AUC = {result['best_value']:.4f}")
+        logger.info("=" * 60)
+
+    return results
+
+
+if __name__ == "__main__":
+    main()

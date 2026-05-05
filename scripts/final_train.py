@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Final model training using selected features and tuned hyperparameters.
+"""Final model training using features selected by rfe_cv and tuned hyperparameters.
 
-Loads selected features from FeatureStore, loads best params from MLflow run,
-then trains and saves final model using FinalModelTrainer.
+Feature list is loaded from the best MLflow run in experiment "rfe_cv_all_{mode}".
+Model hyperparameters are loaded from the best MLflow run in experiment "{mode}_tuning".
 
 Usage:
     RUN_MODE=debug uv run python scripts/final_train.py
@@ -20,20 +20,23 @@ from pathlib import Path
 
 import mlflow
 import numpy as np
+import polars as pl
 import shap
 from matplotlib import pyplot as plt
 
 from credit_risk.config import load_config
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.data.store import FeatureStore
+from credit_risk.data.transformation import TransformerRegistry
 from credit_risk.interpret.shap_explainer import ShapExplainer
-from credit_risk.models.cross_validator import LGBMFactory
+from credit_risk.mlflow_utils import MlflowLogger
 from credit_risk.models.final_model import FinalModelTrainer
+from credit_risk.models.model_factory import get_factory
 from credit_risk.models.plotter import ModelPlotter
 from credit_risk.models.resampler import create_resampler
 from credit_risk.models.splitter import TrainTestCVSplitter
 from credit_risk.models.threshold_selector import CVThresholdSelector
 from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
+from credit_risk.pipeline.table_transformer import TableTransformer
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
@@ -48,236 +51,312 @@ TABLES = [
     "bureau",
     "bureau_balance",
     "previous_application",
-    "pos_cash",
+    "pos_cash_balance",
     "installments",
-    "credit_card",
+    "credit_card_balance",
 ]
 
-LOADER_KEYS = {
-    "application": "application",
-    "bureau": "bureau",
-    "bureau_balance": "bureau_balance",
-    "previous_application": "previous_application",
-    "pos_cash": "pos_cash_balance",
-    "installments": "installments_payments",
-    "credit_card": "credit_card_balance",
-}
 
-cfg = load_config()
-run_mode = cfg.run.mode
-logger.info(f"Running final training in mode: {run_mode}")
+# ---------------------------------------------------------------------------
+# Feature list loading from MLflow
+# ---------------------------------------------------------------------------
 
-mlflow.set_tracking_uri(f"sqlite:///{cfg.output.mlflow_db_path}")
-mlflow.set_experiment(f"final_train_{cfg.run.mode}-weighted_threshold-fix")
 
-sample_frac = cfg.run.sample_fraction
+def load_features_from_mlflow(run_mode: str, tracking_uri: str) -> list[str]:
+    """Load the best feature list from the rfe_cv_all MLflow experiment.
 
-logger.info("Loading data...")
-loader = PLLazyDataLoader()
-labels = loader.load_labels()
-if sample_frac < 1.0:
-    logger.info(f"Sampling {sample_frac * 100}% of data for {run_mode} mode")
-    labels = labels.collect().sample(fraction=sample_frac).lazy()
+    Queries experiment "rfe_cv_all_{mode}", orders by cv_roc_auc descending,
+    downloads "features.json" artifact from the top run.
 
-store = FeatureStore(root=cfg.output.features_path)
-all_selected, saved_records = store.load_tables(TABLES, suffix=f"_{run_mode}", with_records=True)
-logger.info(f"Total selected features: {len(all_selected)}")
+    Args:
+        run_mode: One of "debug", "dev", "prod".
+        tracking_uri: MLflow tracking URI.
 
-features_list = []
-for table in TABLES:
-    logger.info(f"Processing table: {table}")
+    Returns:
+        List of selected feature names.
 
-    df = loader.load(LOADER_KEYS[table]).join(labels, on="SK_ID_CURR", how="inner")
-    df = df.collect()
+    Raises:
+        RuntimeError: If no suitable run is found or artifact is missing.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_name = f"rfe_cv_all_{run_mode}"
 
-    logger.info(f"  Loaded: {df.height} rows, {df.width} cols")
-
-    table_cfg = getattr(cfg.data, table)
-    df = ProcessingPipeline(table_cfg).fit_transform(df)
-
-    df_select = df.drop([c for c in df.columns if c.startswith("SK_ID") and c != "SK_ID_CURR"])
-    features_list.append(df_select)
-
-logger.info(f"Joining {len(features_list)} tables with labels...")
-
-combined = labels.lazy()
-for i, df in enumerate(features_list):
-    combined = combined.join(df.lazy(), on="SK_ID_CURR", how="left", suffix=f"_{i}")
-
-combined = combined.collect()
-
-logger.info(f"Combined: {combined.height} rows, {combined.width} cols")
-
-target_col = cfg.data.target.column
-id_col = cfg.data.target.id_column
-
-available_cols = set(combined.columns) - {target_col, id_col}
-feature_cols = [c for c in all_selected if c in available_cols]
-logger.info(f"Using {len(feature_cols)} selected features")
-
-X = combined.select(feature_cols).to_pandas()
-y = combined.select(target_col).to_numpy().ravel()
-
-X = X.to_numpy(dtype=np.float64)
-
-logger.info(f"Data shape: {X.shape}, Features: {len(feature_cols)}")
-
-resampler = None
-if cfg.resampling and cfg.resampling.enabled:
-    method = cfg.resampling.method
-    kwargs = {
-        "sampling_strategy": cfg.resampling.sampling_strategy,
-        "random_state": cfg.resampling.random_state,
-    }
-    if method == "smote":
-        kwargs["k_neighbors"] = cfg.resampling.k_neighbors
-    resampler = create_resampler(method, **kwargs)
-    logger.info(
-        f"Using {cfg.resampling.method} resampling: "
-        f"sampling_strategy={cfg.resampling.sampling_strategy}"
-    )
-
-splitter = TrainTestCVSplitter(
-    test_size=cfg.splitter.test_size,
-    n_splits=cfg.splitter.n_splits,
-    cv_random_state=cfg.splitter.random_state,
-    stratify=True,
-)
-
-if resampler is not None:
-    splitter.set_resampler(resampler)
-
-X_train, X_test, y_train, y_test = splitter.split_train_test(X, y)
-logger.info(f"Train: {X_train.shape[0]}, Test: {X_test.shape[0]}")
-
-best_params = None
-best_model_name = None
-
-mlflow_active = False
-try:
-    exp = mlflow.get_experiment_by_name(f"final_train_{cfg.run.mode}-weighted_threshold-fix")
-    if exp:
-        runs = mlflow.search_runs(
-            [exp.experiment_id],
-            "metrics.best_roc_auc > 0",
-            max_results=20,
-            order_by=["metrics.best_roc_auc DESC"],
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        raise RuntimeError(
+            f"MLflow experiment '{experiment_name}' not found. "
+            f"Run rfe_cv.py first (combined mode, no --table flag)."
         )
 
-        for _, best_run in runs.iterrows():
-            run_id = best_run.run_id
-            client = mlflow.MlflowClient()
-            run = client.get_run(run_id)
-            params = dict(run.data.params)
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string="metrics.cv_roc_auc > 0",
+        order_by=["metrics.cv_roc_auc DESC"],
+        max_results=1,
+    )
 
-            if "n_estimators" in params or "learning_rate" in params:
-                best_roc_auc = best_run.get("metrics.best_roc_auc", 0)
-                best_params = params
-                best_model_name = params.get("best_model", "lgbm")
-                mlflow_active = True
-                logger.info(f"Found best run: {run_id}, ROC AUC: {best_roc_auc:.4f}")
-                logger.info(f"Best model: {best_model_name}")
-                logger.info(f"Best params: {best_params}")
-                break
-            else:
-                logger.debug(f"Skipping run {run_id[:8]} - no tuning params")
-except Exception as e:
-    logger.warning(f"Could not load from MLflow: {e}")
+    if runs.empty:
+        raise RuntimeError(
+            f"No completed runs with cv_roc_auc found in experiment '{experiment_name}'."
+        )
 
-if best_params is None:
-    app_record = saved_records.get("application", {})
-    meta = app_record.get("meta", {})
-    best_params = meta.get("model_params", {})
-    best_model_name = "lgbm"
-    logger.info(f"Using params from feature store: {best_params}")
+    run_id = runs.iloc[0]["run_id"]
+    logger.info(
+        f"Loading features from run {run_id[:8]} "
+        f"(cv_roc_auc={runs.iloc[0].get('metrics.cv_roc_auc', 'n/a'):.4f})"
+    )
 
-model_params = {
-    k: v for k, v in best_params.items() if k not in ("verbose", "run_mode", "models", "best_model")
-}
+    artifact_path = mlflow.artifacts.download_artifacts(
+        run_id=run_id, artifact_path="features.json"
+    )
+    feature_data = json.loads(Path(artifact_path).read_text())
+    features = feature_data["features"]
+    logger.info(f"Loaded {len(features)} features from MLflow")
+    return features
 
-for k, v in model_params.items():
-    if isinstance(v, str):
-        try:
-            if "." in v:
-                model_params[k] = float(v)
-            else:
-                model_params[k] = int(v)
-        except ValueError:
-            pass
 
-model_params["verbose"] = -1
-model_params["is_unbalance"] = True
+# ---------------------------------------------------------------------------
+# Tuned hyperparameters loading from MLflow
+# ---------------------------------------------------------------------------
 
-if "class_weight" in best_params:
-    model_params["class_weight"] = best_params["class_weight"]
 
-logger.info(f"Training final model with params: {model_params}")
+def load_params_from_mlflow(run_mode: str, tracking_uri: str) -> tuple[dict, str] | None:
+    """Load best hyperparameters from the tuning MLflow experiment.
 
-model_factory = LGBMFactory()
-threshold_selector = CVThresholdSelector(
-    splitter,
-    model_factory,
-    direction="maximize",
-    metric="f1",
-)
+    Returns (params_dict, model_name) or None if no suitable run found.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_name = f"{run_mode}_tuning"
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        logger.warning(f"Tuning experiment '{experiment_name}' not found — using config params")
+        return None
 
-trainer = FinalModelTrainer(model_factory, threshold_selector=threshold_selector)
-result = trainer.train_and_evaluate(X_train, y_train, X_test, y_test, feature_cols, model_params)
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string="metrics.best_roc_auc > 0",
+        order_by=["metrics.best_roc_auc DESC"],
+        max_results=10,
+    )
 
-logger.info(f"Test ROC AUC: {result.test_roc_auc:.4f}")
-logger.info(f"Test F1: {result.test_f1:.4f}")
-logger.info(f"Test Precision: {result.test_precision:.4f}")
-logger.info(f"Test Recall: {result.test_recall:.4f}")
-logger.info(f"Optimal threshold: {result.optimal_threshold:.2f}")
+    for _, run_row in runs.iterrows():
+        run_id = run_row["run_id"]
+        client = mlflow.MlflowClient()
+        run = client.get_run(run_id)
+        params = dict(run.data.params)
+        if "n_estimators" in params or "learning_rate" in params:
+            best_roc_auc = run_row.get("metrics.best_roc_auc", 0)
+            model_name = params.get("best_model", "lgbm")
+            logger.info(
+                f"Loaded tuned params from run {run_id[:8]} "
+                f"(best_roc_auc={best_roc_auc:.4f}, model={model_name})"
+            )
+            return params, model_name
 
-y_pred_proba = (
-    model_factory.create(**model_params).fit(X_train, y_train).predict_proba(X_test)[:, 1]
-)
+    logger.warning("No tuning run with hyperparameters found — using config params")
+    return None
 
-plotter = ModelPlotter()
-plots_path = cfg.output.models_path / "plots"
-plotter.plot_all(y_test, y_pred_proba, threshold=result.optimal_threshold, output_dir=plots_path)
 
-model_dir = Path(cfg.output.models_path)
-model_dir.mkdir(exist_ok=True)
-model_path = model_dir / f"final_model_{run_mode}.pkl"
-final_model = model_factory.create(**model_params).fit(X_train, y_train)
-with open(model_path, "wb") as f:
-    pickle.dump(final_model, f)
-logger.info(f"Model saved to {model_path}")
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
-feature_path = model_dir / f"features_{run_mode}.json"
-with open(feature_path, "w") as f:
-    json.dump(feature_cols, f, indent=2)
-logger.info(f"Features saved to {feature_path}")
 
-logger.info("Computing SHAP feature importance...")
-numpy_X = X_train.numpy() if hasattr(X_train, "numpy") else X_train
+def main() -> None:
+    cfg = load_config("model", "resampling")
+    run_mode = cfg.run.mode
+    logger.info(f"Final training in mode: {run_mode}")
 
-shap_exp = ShapExplainer()
-shap_exp.fit(final_model, numpy_X)
-shap_vals, mean_abs = shap_exp.global_importance(numpy_X, n_samples=300)
+    mlflow.set_tracking_uri(cfg.output.mlflow_tracking_uri())
+    mlflow.set_experiment(f"final_train_{run_mode}")
+    ml_logger = MlflowLogger()
 
-shap_plot_path = plots_path / "shap_summary.png"
-fig, ax = plt.subplots(figsize=(10, 8))
-shap.summary_plot(shap_vals, numpy_X[:300], feature_names=feature_cols, show=False)
-plt.tight_layout()
-plt.savefig(shap_plot_path, dpi=150, bbox_inches="tight")
-plt.close()
-logger.info(f"SHAP plot saved to {shap_plot_path}")
+    # ── Load feature list from MLflow ────────────────────────────────────────
+    best_features = load_features_from_mlflow(run_mode, cfg.output.mlflow_tracking_uri())
 
-with mlflow.start_run(run_name=f"{run_mode}_final_model"):
-    mlflow.log_params(best_params)
-    mlflow.log_metric("test_roc_auc", result.test_roc_auc)
-    mlflow.log_metric("test_f1", result.test_f1)
-    mlflow.log_metric("test_precision", result.test_precision)
-    mlflow.log_metric("test_recall", result.test_recall)
-    mlflow.log_metric("optimal_threshold", result.optimal_threshold)
-    mlflow.log_param("n_features", len(feature_cols))
-    mlflow.sklearn.log_model(final_model, "final_model")
-    mlflow.log_artifact(model_path)
-    mlflow.log_artifact(feature_path)
-    mlflow.log_artifact(shap_plot_path)
-    plotter.log_to_mlflow(True)
+    # ── Load hyperparameters (MLflow tuning run → fallback to config) ────────
+    tuning_result = load_params_from_mlflow(run_mode, cfg.output.mlflow_tracking_uri())
+    if tuning_result is not None:
+        raw_params, best_model_name = tuning_result
+        # MLflow stores all params as strings — cast numerics
+        model_params: dict = {}
+        for k, v in raw_params.items():
+            if k in ("verbose", "run_mode", "models", "best_model", "x_transform", "nan_fill"):
+                continue
+            try:
+                model_params[k] = int(v) if "." not in v else float(v)
+            except (ValueError, TypeError):
+                model_params[k] = v
+    else:
+        model_params = cfg.model.params.copy()
+        best_model_name = cfg.model.model_type
 
-logger.info("Final training complete")
+    model_params["verbose"] = -1
+    logger.info(f"Training with model={best_model_name}, params={model_params}")
+
+    # ── Splitter + resampler ────────────────────────────────────────────────
+    resampler = None
+    if cfg.resampling and cfg.resampling.enabled:
+        method = cfg.resampling.method
+        kwargs: dict = {
+            "sampling_strategy": cfg.resampling.sampling_strategy,
+            "random_state": cfg.resampling.random_state,
+        }
+        if method == "smote":
+            kwargs["k_neighbors"] = cfg.resampling.k_neighbors
+        resampler = create_resampler(method, **kwargs)
+        logger.info(f"Resampling: {method}, strategy={cfg.resampling.sampling_strategy}")
+
+    splitter = TrainTestCVSplitter.from_config(cfg)
+    if resampler is not None:
+        splitter.set_resampler(resampler)
+
+    # ── Load labels, lock away test set ─────────────────────────────────────
+    loader = PLLazyDataLoader()
+    labels_df = loader.load_labels().collect()
+
+    if cfg.run.sample_fraction < 1.0:
+        logger.info(f"Sampling {cfg.run.sample_fraction * 100:.0f}% of data")
+        labels_df = labels_df.sample(fraction=cfg.run.sample_fraction, seed=cfg.run.random_state)
+
+    ids = labels_df.select(cfg.data.target.id_column).to_numpy().ravel()
+    y = labels_df.select(cfg.data.target.column).to_numpy().ravel()
+    ids_train, ids_test, _, _ = splitter.split_train_test(ids, y)
+
+    labels_train_df = labels_df.filter(pl.col(cfg.data.target.id_column).is_in(ids_train))
+
+    # ── Process all tables via TableTransformer (leak-free) ─────────────────
+    included_tables = [t for t in TABLES if getattr(cfg.data, t).include]
+    logger.info(f"Processing tables: {included_tables}")
+
+    raw_tables = {}
+    for table in included_tables:
+        logger.info(f"  Loading {table}...")
+        raw_tables[table] = loader.load(table).collect()
+
+    pipeline_factories = {
+        t: (lambda tbl=t: ProcessingPipeline(getattr(cfg.data, tbl)).build())
+        for t in included_tables
+    }
+    cross_transformer = TransformerRegistry.get(cfg.data.cross.transformer)()
+
+    table_transformer = TableTransformer(
+        pipeline_factories=pipeline_factories,
+        id_column=cfg.data.target.id_column,
+        target_column=cfg.data.target.column,
+        cross_transformer=cross_transformer,
+    )
+
+    X_train_all, X_test_all, y_train, y_test, all_feature_names = table_transformer.fit_transform(
+        tables=raw_tables,
+        labels=labels_train_df,
+        train_ids=set(ids_train),
+        val_ids=set(ids_test),
+    )
+
+    logger.info(
+        f"Processed: {X_train_all.shape[1]} total features, "
+        f"{X_train_all.shape[0]} train, {X_test_all.shape[0]} test samples"
+    )
+
+    # ── Filter to selected features ─────────────────────────────────────────
+    available = set(all_feature_names)
+    feature_cols = [f for f in best_features if f in available]
+    missing = [f for f in best_features if f not in available]
+    if missing:
+        logger.warning(f"{len(missing)} selected features not found after processing: {missing}")
+    logger.info(f"Using {len(feature_cols)} selected features")
+
+    feat_idx = [all_feature_names.index(f) for f in feature_cols]
+    X_train = X_train_all[:, feat_idx]
+    X_test = X_test_all[:, feat_idx]
+
+    # ── Train and evaluate ───────────────────────────────────────────────────
+    model_factory = get_factory(
+        best_model_name,
+        cfg.model.x_transform,
+        cfg.model.nan_fill,
+    )
+    threshold_selector = CVThresholdSelector(
+        splitter=splitter,
+        model_factory=model_factory,
+        direction="maximize",
+        metric="f1",
+    )
+    trainer = FinalModelTrainer(model_factory, threshold_selector=threshold_selector)
+    result = trainer.train_and_evaluate(
+        X_train, y_train, X_test, y_test, feature_cols, model_params
+    )
+
+    logger.info(f"Test ROC AUC:  {result.test_roc_auc:.4f}")
+    logger.info(f"Test F1:       {result.test_f1:.4f}")
+    logger.info(f"Test Recall:   {result.test_recall:.4f}")
+    logger.info(f"Test Precision:{result.test_precision:.4f}")
+    logger.info(f"Threshold:     {result.optimal_threshold:.2f}")
+
+    # ── Plots ────────────────────────────────────────────────────────────────
+    final_model = model_factory(**model_params).build_model_pipeline()
+    final_model.fit(X_train, y_train)
+    y_pred_proba = final_model.predict_proba(X_test)
+
+    plots_path = cfg.output.models_path / "plots"
+    plots_path.mkdir(parents=True, exist_ok=True)
+    plotter = ModelPlotter()
+    plotter.plot_all(
+        y_test, y_pred_proba, threshold=result.optimal_threshold, output_dir=plots_path
+    )
+
+    # ── Save model + feature list ────────────────────────────────────────────
+    model_dir = Path(cfg.output.models_path)
+    model_dir.mkdir(exist_ok=True)
+
+    model_path = model_dir / f"final_model_{run_mode}.pkl"
+    with open(model_path, "wb") as f:
+        pickle.dump(final_model, f)
+    logger.info(f"Model saved: {model_path}")
+
+    feature_path = model_dir / f"features_{run_mode}.json"
+    with open(feature_path, "w") as f:
+        json.dump(feature_cols, f, indent=2)
+    logger.info(f"Features saved: {feature_path}")
+
+    # ── SHAP ─────────────────────────────────────────────────────────────────
+    logger.info("Computing SHAP feature importance...")
+    numpy_X = X_train if isinstance(X_train, np.ndarray) else X_train.numpy()
+    shap_exp = ShapExplainer()
+    shap_exp.fit(final_model, numpy_X)
+    shap_vals, _ = shap_exp.global_importance(numpy_X, n_samples=300)
+
+    shap_plot_path = plots_path / "shap_summary.png"
+    fig, _ = plt.subplots(figsize=(10, 8))
+    shap.summary_plot(shap_vals, numpy_X[:300], feature_names=feature_cols, show=False)
+    plt.tight_layout()
+    plt.savefig(shap_plot_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"SHAP plot saved: {shap_plot_path}")
+
+    # ── Log to MLflow ─────────────────────────────────────────────────────────
+    with ml_logger.start_run(run_name=f"{run_mode}_final_model"):
+        ml_logger.log_flat_config(cfg)
+        ml_logger.log_params({"model_type": best_model_name, "n_features": len(feature_cols)})
+        ml_logger.log_params(model_params)
+        ml_logger.log_metrics(
+            {
+                "test_roc_auc": result.test_roc_auc,
+                "test_f1": result.test_f1,
+                "test_precision": result.test_precision,
+                "test_recall": result.test_recall,
+                "optimal_threshold": result.optimal_threshold,
+            }
+        )
+        ml_logger.log_model(final_model, "final_model")
+        ml_logger.log_file_artifact(str(model_path))
+        ml_logger.log_file_artifact(str(feature_path))
+        ml_logger.log_file_artifact(str(shap_plot_path))
+        plotter.log_to_mlflow(True)
+
+    logger.info("Final training complete")
+
+
+if __name__ == "__main__":
+    main()
