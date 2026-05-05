@@ -36,9 +36,9 @@ def _suggest_lgbm(trial: optuna.Trial) -> dict[str, Any]:
         "n_jobs": -1,
         "verbose": -1,
         "random_state": 42,
-        # GPU acceleration
+        # GPU acceleration via OpenCL — max_bin capped at 255 (OpenCL kernel limit)
         "device": "gpu",
-        "gpu_use_dp": True,  # double precision — lifts max_bin GPU limit
+        "gpu_use_dp": True,
         # Objective fixed — cross_entropy is an alias; cross_entropy_lambda
         # outputs raw logits which distorts cross-trial ROC AUC comparisons.
         "objective": "binary",
@@ -65,7 +65,8 @@ def _suggest_lgbm(trial: optuna.Trial) -> dict[str, Any]:
         "min_split_gain": trial.suggest_float("min_split_gain", 0.0, 5.0),
         # min_data_in_leaf is the native name of min_child_samples — do not set both
         "min_data_in_bin": trial.suggest_int("min_data_in_bin", 3, 100),
-        "max_bin": trial.suggest_int("max_bin", 63, 511),
+        # max_bin capped at 255 — OpenCL GPU kernel hard limit
+        "max_bin": trial.suggest_int("max_bin", 63, 255),
         # Imbalance — n_neg/n_pos ≈ 11.5 for 8% positive rate
         "scale_pos_weight": trial.suggest_float("scale_pos_weight", 10.0, 13.0),
         # Extra trees mode: randomises split points for faster/regularized trees
