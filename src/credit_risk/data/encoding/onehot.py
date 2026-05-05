@@ -68,34 +68,36 @@ class PolarsOneHotEncoder(ProcessingStep):
     - Nulls and NaNs are treated as a dedicated category ``__missing__``.
     - Categories whose training frequency is strictly below
       ``rare_threshold`` are collapsed into ``__rare__``.
-    - Columns with more than ``max_categories`` *after* collapsing rare
-      and missing are dropped with a warning (cardinality guard).
+    - When the number of categories after collapsing still exceeds
+      ``max_categories``, the least frequent categories beyond the top
+      ``max_categories - 1`` are also collapsed into ``__rare__``.
+      The column is **never dropped** — all information is preserved
+      via the ``__rare__`` bucket.
     - At transform time, categories unseen during fit are mapped to
       ``__rare__`` (same column as rare training categories).
 
     Parameters
     ----------
     max_categories:
-        Upper bound on one-hot columns emitted per feature (after
-        collapsing rare + missing). Columns exceeding this are dropped.
+        Maximum number of one-hot columns emitted per feature (including
+        ``__missing__`` and ``__rare__``).  Excess categories are folded
+        into ``__rare__`` rather than dropping the column.
     rare_threshold:
         Minimum training frequency [0, 1) for a category to get its own
         column. Categories strictly below this are collapsed to
-        ``__rare__``. Set to 0.0 to disable rare collapsing.
+        ``__rare__``. Set to 0.0 to disable frequency-based collapsing.
     """
 
     def __init__(self, max_categories: int = 15, rare_threshold: float = 0.01) -> None:
         self.max_categories = max_categories
         self.rare_threshold = rare_threshold
         self.categories_: dict[str, list[str]] = {}
-        self.dropped_cols_: set[str] = set()
         self.is_fitted: bool = False
 
     @override
     def fit(self, X: pl.DataFrame, y=None) -> "PolarsOneHotEncoder":
         """Learn categories and rare/missing buckets from training data."""
         self.categories_.clear()
-        self.dropped_cols_.clear()
 
         string_cols = [c for c, t in X.schema.items() if t == pl.String]
         n_rows = len(X)
@@ -106,40 +108,58 @@ class PolarsOneHotEncoder(ProcessingStep):
             null_count = series.null_count()
             non_null = series.drop_nulls()
 
-            counts: dict[str, int] = {
-                row[col]: row["count"] for row in non_null.value_counts(sort=False).to_dicts()
-            }
+            # Sort by descending frequency so we can trim the tail deterministically.
+            counts: list[tuple[str, int]] = sorted(
+                ((row[col], row["count"]) for row in non_null.value_counts(sort=False).to_dicts()),
+                key=lambda x: -x[1],
+            )
 
             final_cats: list[str] = []
 
             if null_count > 0:
                 final_cats.append(_MISSING)
 
-            rare_total = 0
+            # Split into rare (below threshold) and non-rare, preserving freq order.
             non_rare: list[str] = []
-            for cat, cnt in counts.items():
-                freq = cnt / n_rows
-                if freq < self.rare_threshold:
-                    rare_total += cnt
+            has_rare = False
+            for cat, cnt in counts:
+                if cnt / n_rows < self.rare_threshold:
+                    has_rare = True
                 else:
                     non_rare.append(cat)
 
-            final_cats.extend(sorted(non_rare))
-
-            has_rare_training = rare_total > 0
-            if has_rare_training:
+            final_cats.extend(non_rare)
+            if has_rare:
                 final_cats.append(_RARE)
 
+            # If still over max_categories, trim the least-frequent non-special
+            # categories into __rare__ rather than dropping the column.
             if len(final_cats) > self.max_categories:
-                logger.warning(
-                    "PolarsOneHotEncoder: '%s' has %d categories after collapsing "
-                    "(max_categories=%d). Column dropped.",
+                # How many non-special slots do we have?
+                # Reserve 1 slot for __rare__ (will always exist after trimming).
+                n_special = (1 if _MISSING in final_cats else 0) + 1  # +1 for __rare__
+                n_keep = self.max_categories - n_special
+                non_special = [c for c in final_cats if c not in (_MISSING, _RARE)]
+
+                kept = non_special[:n_keep]
+                trimmed = non_special[n_keep:]
+
+                rebuilt: list[str] = []
+                if _MISSING in final_cats:
+                    rebuilt.append(_MISSING)
+                rebuilt.extend(kept)
+                if trimmed or has_rare:
+                    rebuilt.append(_RARE)
+
+                logger.debug(
+                    "PolarsOneHotEncoder: '%s' had %d categories; trimmed %d into __rare__ "
+                    "(max_categories=%d).",
                     col,
                     len(final_cats),
+                    len(trimmed),
                     self.max_categories,
                 )
-                self.dropped_cols_.add(col)
-                continue
+                final_cats = rebuilt
 
             self.categories_[col] = final_cats
 
@@ -153,14 +173,13 @@ class PolarsOneHotEncoder(ProcessingStep):
         if not self.is_fitted:
             raise RuntimeError("Call fit() before transform().")
 
-        if not self.categories_ and not self.dropped_cols_:
+        if not self.categories_:
             return X
 
         cols_to_drop: list[str] = []
         all_exprs: list[pl.Expr] = []
 
-        fitted_cols = set(self.categories_) | self.dropped_cols_
-        for col in fitted_cols:
+        for col, categories in self.categories_.items():
             if col not in X.columns:
                 logger.warning(
                     "PolarsOneHotEncoder: fitted column '%s' not found in transform "
@@ -169,11 +188,6 @@ class PolarsOneHotEncoder(ProcessingStep):
                 )
                 continue
 
-            if col in self.dropped_cols_:
-                cols_to_drop.append(col)
-                continue
-
-            categories = self.categories_[col]
             has_rare = _RARE in categories
             known_non_special = set(categories) - {_MISSING, _RARE}
 
