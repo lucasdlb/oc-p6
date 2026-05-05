@@ -161,6 +161,15 @@ class ProcessingTuner:
 
         n_jobs = self._config.n_jobs
 
+        # If the model itself uses all cores (n_jobs=-1 in FIXED params),
+        # running multiple Optuna trials in parallel would oversubscribe the CPU.
+        # Force Optuna to n_jobs=1 in that case.
+        from credit_risk.models.param_spaces import FIXED
+
+        if FIXED.get("n_jobs", 1) == -1 and n_jobs != 1:
+            logger.info("Model n_jobs=-1 — forcing Optuna n_jobs=1 to avoid CPU oversubscription.")
+            n_jobs = 1
+
         # Collect all trial scores keyed by trial number for post-hoc lookup
         trial_scores: dict[int, dict[str, float]] = {}
         trial_scores_std: dict[int, dict[str, float]] = {}
