@@ -31,9 +31,18 @@ logger = logging.getLogger(__name__)
 class ProcessingTuner:
     """Zero-leakage Optuna tuner using ProcessingCV.
 
-    Each Optuna trial calls ProcessingCV.validate(tables, labels, model_params),
-    which performs fresh per-fold table processing via TableTransformer.
-    No information from the validation set leaks into feature engineering.
+    MLflow structure (all runs are nested under the caller's active run):
+
+        {model_name}                        ← parent run per model type
+        │  params: model, n_trials, x_transform, nan_fill, n_features
+        │  metrics: best_roc_auc, best_pr_auc, best_gini, ...
+        │  artifact: best_config.json
+        │
+        ├── trial_0                         ← nested run per trial
+        │   params: all hyperparams
+        │   metrics: mean_roc_auc, std_roc_auc, mean_pr_auc, ...
+        ├── trial_1
+        └── ...
 
     Usage:
         tuner = ProcessingTuner(
@@ -41,18 +50,16 @@ class ProcessingTuner:
             splitter=splitter,
             tuning_config=cfg.tuning,
             metrics=ClassificationRankingMetrics(),
-            mlflow_logging=True,
         )
-        results = tuner.optimize(raw_tables, labels_df)
+        results = tuner.optimize(raw_tables, labels_df, feature_mask=features)
     """
 
     def __init__(
         self,
-        table_transformer: TableTransformer,
+        table_transformer: "TableTransformer",
         splitter: Splitter,
         tuning_config: TuningConfig,
         metrics: ClassificationRankingMetrics | ClassificationMetrics,
-        mlflow_logging: bool = True,
     ):
         """Initialize ProcessingTuner.
 
@@ -61,13 +68,11 @@ class ProcessingTuner:
             splitter: Train/test splitter (e.g. TrainTestCVSplitter).
             tuning_config: TuningConfig with n_trials, models, x_transform, etc.
             metrics: Metrics to evaluate per fold.
-            mlflow_logging: Whether to log to MLflow.
         """
         self._table_transformer = table_transformer
         self._splitter = splitter
         self._config = tuning_config
         self._metrics = metrics
-        self._mlflow_logging = mlflow_logging
         self._results: dict[str, dict[str, Any]] = {}
 
     def optimize(
@@ -79,16 +84,19 @@ class ProcessingTuner:
     ) -> dict[str, dict[str, Any]]:
         """Run sequential Optuna optimization across model types.
 
+        Each model type gets a nested MLflow parent run.  Each trial within
+        that model type gets a further nested run.
+
         Args:
             tables: Mapping of table name -> raw Polars DataFrame.
             labels: Polars DataFrame with id_column and target_column.
-            model_names: List of model names to tune. Defaults to cfg.tuning.models.
-            feature_mask: Optional list of feature names to restrict CV evaluation
-                to. Should come from the best rfe_cv run so tuning is performed on
-                the same feature subset as final training.
+            model_names: Model types to tune. Defaults to cfg.tuning.models.
+            feature_mask: Feature names to restrict CV to (from rfe_cv output).
+                None means all features.
 
         Returns:
-            Dict mapping model_name -> {best_value, best_params, study}
+            Dict mapping model_name -> {best_value, best_params, study,
+            best_scores}
         """
         model_names = model_names or self._config.models
         self._results = {}
@@ -108,11 +116,12 @@ class ProcessingTuner:
                 nan_fill=self._config.nan_fill,
             )
 
-            study = self._run_study(tables, labels, model_name, factory, feature_mask)
+            study, best_scores = self._run_study(tables, labels, model_name, factory, feature_mask)
 
             self._results[model_name] = {
                 "best_value": study.best_value,
                 "best_params": study.best_params,
+                "best_scores": best_scores,
                 "study": study,
             }
 
@@ -125,16 +134,18 @@ class ProcessingTuner:
         tables: dict[str, pl.DataFrame],
         labels: pl.DataFrame,
         model_name: str,
-        factory: ModelFactory,
+        factory: "ModelFactory",
         feature_mask: list[str] | None = None,
-    ) -> optuna.Study:
+    ) -> tuple[optuna.Study, dict[str, float]]:
         """Run Optuna study for a single model type.
 
-        A single ProcessingCV instance is created per model type and reused
-        across all trials — the ProcessingCV itself is stateless (TableTransformer
-        creates fresh pipelines per fold).
+        Returns (study, best_mean_scores) where best_mean_scores contains all
+        metrics from the best trial.
         """
+        import mlflow
+
         optuna.logging.set_verbosity(optuna.logging.WARNING)
+
         cv = ProcessingCV(
             table_transformer=self._table_transformer,
             splitter=self._splitter,
@@ -149,9 +160,10 @@ class ProcessingTuner:
         )
 
         n_jobs = self._config.n_jobs
-        if self._mlflow_logging and n_jobs > 1:
-            logger.warning("MLflow logging enabled, forcing n_jobs=1 to avoid race conditions")
-            n_jobs = 1
+
+        # Collect all trial scores keyed by trial number for post-hoc lookup
+        trial_scores: dict[int, dict[str, float]] = {}
+        trial_scores_std: dict[int, dict[str, float]] = {}
 
         def objective(trial: optuna.Trial) -> float:
             params = suggest_params(trial, model_name)
@@ -165,35 +177,45 @@ class ProcessingTuner:
             cv_scores = CVMetrics.compute(result, self._metrics)
             score = cv_scores.mean_scores.get("roc_auc", 0.0)
 
-            logger.info(f"CV score: {score:.4f}")
+            trial_scores[trial.number] = cv_scores.mean_scores
+            trial_scores_std[trial.number] = cv_scores.std_scores
 
-            trial.set_user_attr("score", score)
+            # Store all metrics on the trial for Optuna's user_attrs
             for k, v in cv_scores.mean_scores.items():
-                trial.set_user_attr(k, v)
+                trial.set_user_attr(f"mean_{k}", v)
+            for k, v in cv_scores.std_scores.items():
+                trial.set_user_attr(f"std_{k}", v)
 
-            if self._mlflow_logging:
-                import mlflow
+            # One nested MLflow run per trial
+            if mlflow.active_run():
+                with mlflow.start_run(nested=True, run_name=f"{model_name}__trial_{trial.number}"):
+                    mlflow.log_params({**params, "trial": trial.number})
+                    # Log mean and std for every metric
+                    flat_metrics = {f"mean_{k}": v for k, v in cv_scores.mean_scores.items()}
+                    flat_metrics.update({f"std_{k}": v for k, v in cv_scores.std_scores.items()})
+                    mlflow.log_metrics(flat_metrics)
 
-                if mlflow.active_run():
-                    with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
-                        mlflow.log_params(params)
-                        mlflow.log_metrics(cv_scores.mean_scores)
+            logger.info(
+                "Trial %d: roc_auc=%.4f ± %.4f",
+                trial.number,
+                score,
+                cv_scores.std_scores.get("roc_auc", 0.0),
+            )
 
             return score
 
-        if self._mlflow_logging:
-            import mlflow
+        # Model-type parent run
+        with mlflow.start_run(nested=True, run_name=f"{model_name}"):
+            mlflow.log_params(
+                {
+                    "model_type": model_name,
+                    "n_trials": self._config.n_trials,
+                    "x_transform": self._config.x_transform,
+                    "nan_fill": str(self._config.nan_fill),
+                    "n_features": len(feature_mask) if feature_mask else "all",
+                }
+            )
 
-            with mlflow.start_run(nested=True, run_name=model_name):
-                mlflow.log_params({"model": model_name, "n_trials": self._config.n_trials})
-                study.optimize(
-                    objective,
-                    n_trials=self._config.n_trials,
-                    timeout=self._config.timeout,
-                    n_jobs=n_jobs,
-                )
-                mlflow.log_metric("best_roc_auc", study.best_value)
-        else:
             study.optimize(
                 objective,
                 n_trials=self._config.n_trials,
@@ -201,4 +223,26 @@ class ProcessingTuner:
                 n_jobs=n_jobs,
             )
 
-        return study
+            # Best trial metrics
+            best_trial_num = study.best_trial.number
+            best_mean = trial_scores.get(best_trial_num, {})
+            best_std = trial_scores_std.get(best_trial_num, {})
+
+            # Log all best metrics on model parent run
+            mlflow.log_metrics({f"best_{k}": v for k, v in best_mean.items()})
+            mlflow.log_metrics({f"best_std_{k}": v for k, v in best_std.items()})
+
+            # Save full best config as artifact
+            best_config = {
+                "model_type": model_name,
+                "x_transform": self._config.x_transform,
+                "nan_fill": self._config.nan_fill,
+                "best_params": study.best_params,
+                "best_metrics": {f"mean_{k}": v for k, v in best_mean.items()},
+                "best_metrics_std": {f"std_{k}": v for k, v in best_std.items()},
+                "n_features": len(feature_mask) if feature_mask else None,
+                "n_trials": self._config.n_trials,
+            }
+            mlflow.log_dict(best_config, "best_config.json")
+
+        return study, best_mean

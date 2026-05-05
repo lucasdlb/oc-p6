@@ -172,7 +172,6 @@ def main(config=None):
             splitter=splitter,
             tuning_config=cfg.tuning,
             metrics=ClassificationRankingMetrics(),
-            mlflow_logging=False,
         )
 
         results = tuner.optimize(
@@ -182,13 +181,34 @@ def main(config=None):
         )
 
         best_name = max(results, key=lambda k: results[k]["best_value"])
+        best = results[best_name]
+
+        # Log overall best on the parent run
         ml_logger.log_params({"best_model": best_name})
-        ml_logger.log_metric("best_roc_auc", results[best_name]["best_value"])
+        ml_logger.log_metric("best_roc_auc", best["best_value"])
+        for k, v in best.get("best_scores", {}).items():
+            ml_logger.log_metric(f"best_{k}", v)
+
+        # Save overall best config as artifact
+        ml_logger.log_dict_artifact(
+            {
+                "best_model_type": best_name,
+                "best_params": best["best_params"],
+                "best_metrics": best.get("best_scores", {}),
+                "x_transform": cfg.tuning.x_transform,
+                "nan_fill": cfg.tuning.nan_fill,
+                "n_features_mask": len(feature_mask) if feature_mask else None,
+                "run_mode": run_mode,
+            },
+            "best_config.json",
+            artifact_path="",
+        )
 
         logger.info("=" * 60)
         logger.info("Results:")
         for name, result in results.items():
             logger.info("  %s: ROC AUC = %.4f", name, result["best_value"])
+        logger.info("Best overall: %s (%.4f)", best_name, best["best_value"])
         logger.info("=" * 60)
 
     return results
