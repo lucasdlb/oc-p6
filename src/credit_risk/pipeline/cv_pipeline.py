@@ -13,6 +13,7 @@ are handled by TableTransformer.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -26,6 +27,18 @@ if TYPE_CHECKING:
     from credit_risk.pipeline.table_transformer import TableTransformer
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FoldArrays:
+    """Pre-built numpy arrays for one CV fold."""
+
+    fold_index: int
+    X_train: np.ndarray
+    X_val: np.ndarray
+    y_train: np.ndarray
+    y_val: np.ndarray
+    feature_names: list[str]
 
 
 class ProcessingCV:
@@ -50,6 +63,125 @@ class ProcessingCV:
         self.model_factory = model_factory
         self.importance_strategy = importance_strategy
         self.verbose = verbose
+
+    def build_folds(
+        self,
+        tables: dict[str, pl.DataFrame],
+        labels: pl.DataFrame,
+        feature_mask: list[str] | None = None,
+    ) -> list[FoldArrays]:
+        """Pre-build all fold arrays once — process tables per fold, return numpy.
+
+        This separates the expensive table processing from the model fitting so
+        that Optuna parallel workers can share the pre-built arrays without
+        reprocessing tables in every trial.
+
+        Args:
+            tables: Raw Polars DataFrames.
+            labels: Labels DataFrame (train IDs only).
+            feature_mask: Optional feature subset to apply after processing.
+
+        Returns:
+            List of FoldArrays, one per CV fold.
+        """
+        ids = labels.select(self.table_transformer.id_column).to_numpy().ravel()
+        y = labels.select(self.table_transformer.target_column).to_numpy().ravel()
+
+        folds: list[FoldArrays] = []
+
+        for fold_idx, (fold_train_idx, fold_val_idx) in enumerate(self.splitter.split_cv(ids, y)):
+            if self.verbose:
+                logger.info(
+                    "\n%s\n Preprocessing fold %d/%d\n%s",
+                    "─" * 50,
+                    fold_idx + 1,
+                    self.splitter.n_splits,
+                    "─" * 50,
+                )
+
+            fold_train_ids = set(ids[fold_train_idx].tolist())
+            fold_val_ids = set(ids[fold_val_idx].tolist())
+
+            X_train, X_val, y_train, y_val, feature_names = self.table_transformer.fit_transform(
+                tables, labels, fold_train_ids, fold_val_ids
+            )
+
+            if feature_mask is not None:
+                available = set(feature_names)
+                fold_mask = [f for f in feature_mask if f in available]
+                mask_idx = [feature_names.index(f) for f in fold_mask]
+                X_train = X_train[:, mask_idx]
+                X_val = X_val[:, mask_idx]
+                feature_names = fold_mask
+
+            if self.verbose:
+                logger.info(
+                    "  Fold %d: X_train=%s  X_val=%s  pos_rate=%.3f",
+                    fold_idx + 1,
+                    X_train.shape,
+                    X_val.shape,
+                    y_train.mean(),
+                )
+
+            folds.append(
+                FoldArrays(
+                    fold_index=fold_idx,
+                    X_train=X_train,
+                    X_val=X_val,
+                    y_train=y_train,
+                    y_val=y_val,
+                    feature_names=feature_names,
+                )
+            )
+
+        return folds
+
+    def validate_folds(
+        self,
+        folds: list[FoldArrays],
+        model_params: dict[str, Any] | None = None,
+    ) -> CVResult:
+        """Run CV on pre-built fold arrays — no table processing, model only.
+
+        Used by ProcessingTuner when fold arrays are pre-built once and reused
+        across all Optuna trials.
+
+        Args:
+            folds: Pre-built fold arrays from build_folds().
+            model_params: Hyperparameters for the model pipeline.
+
+        Returns:
+            CVResult with fold_results and feature_names populated.
+        """
+        model_params = model_params or {}
+        fold_results: list[FoldResult] = []
+
+        for fa in folds:
+            model = self.model_factory(**model_params).build_model_pipeline()
+            model.fit(fa.X_train, fa.y_train)
+            y_pred = model.predict_proba(fa.X_val)
+
+            importances: np.ndarray | None = None
+            if self.importance_strategy is not None:
+                importances = self.importance_strategy.compute_fold(
+                    model, fa.X_val, fa.y_val, model_params
+                )
+
+            fold_results.append(
+                FoldResult(
+                    fold_index=fa.fold_index,
+                    y_true=fa.y_val,
+                    y_prob=y_pred,
+                    importances=importances,
+                )
+            )
+
+        return CVResult(
+            n_folds=self.splitter.n_splits,
+            n_features=folds[0].X_train.shape[1] if folds else 0,
+            fold_results=fold_results,
+            feature_names=folds[0].feature_names if folds else [],
+        )
 
     def validate(
         self,
