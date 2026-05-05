@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
+import pathlib
 import tempfile
 
 import mlflow
@@ -46,12 +46,13 @@ class MlflowLogger:
     def log_dict_artifact(
         self, data: dict, filename: str, artifact_path: str = "artifacts"
     ) -> None:
-        """Save dict as JSON artifact."""
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-            json.dump(data, f, indent=2)
-            tmp_path = f.name
-        mlflow.log_artifact(tmp_path, artifact_path=artifact_path)
-        os.unlink(tmp_path)
+        """Save dict as JSON artifact with the given filename."""
+        tmp_dir = pathlib.Path(tempfile.mkdtemp())
+        tmp_file = tmp_dir / filename
+        tmp_file.write_text(json.dumps(data, indent=2))
+        mlflow.log_artifact(str(tmp_file), artifact_path=artifact_path)
+        tmp_file.unlink()
+        tmp_dir.rmdir()
 
     def log_file_artifact(self, file_path: str, artifact_path: str | None = None) -> None:
         """Log a file as an artifact."""
