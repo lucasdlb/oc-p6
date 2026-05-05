@@ -81,6 +81,8 @@ def _suggest_xgboost(trial: optuna.Trial) -> dict[str, Any]:
         "n_jobs": -1,
         "verbosity": 0,
         "random_state": 42,
+        # GPU via CUDA — ~179 MiB VRAM, parallel trials safe
+        "device": "cuda",
         # tree_method fixed to hist — fastest, supports both grow policies,
         # default since XGBoost 1.6; "approx" does not support lossguide.
         "tree_method": "hist",
@@ -118,6 +120,8 @@ def _suggest_catboost(trial: optuna.Trial) -> dict[str, Any]:
         "thread_count": -1,
         "verbose": 0,
         "random_seed": 42,
+        # GPU — ~5.4 GB VRAM peak, only one trial at a time (see processing_tuner)
+        "task_type": "GPU",
         # boosting_type fixed to Plain — Ordered is significantly slower and
         # benefits mainly small datasets; impractical at 82k+ rows.
         "boosting_type": "Plain",
@@ -131,7 +135,7 @@ def _suggest_catboost(trial: optuna.Trial) -> dict[str, Any]:
         "border_count": trial.suggest_int("border_count", 32, 255),
         # Regularisation
         "random_strength": trial.suggest_float("random_strength", 0.01, 10.0, log=True),
-        "rsm": trial.suggest_float("rsm", 0.5, 1.0),
+        # rsm (column subsampling) not supported on GPU — omitted
         # Leaf estimation
         "leaf_estimation_iterations": trial.suggest_int("leaf_estimation_iterations", 1, 20),
         # Missing values

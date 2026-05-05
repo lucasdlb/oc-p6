@@ -161,29 +161,37 @@ class ProcessingTuner:
 
         n_jobs = self._config.n_jobs
 
-        # Determine whether to allow Optuna trial parallelism.
-        # - CPU models with n_jobs=-1: Optuna must be sequential (n_jobs=1)
-        #   to avoid CPU oversubscription.
-        # - GPU models (device="gpu"): each trial uses a separate process with
-        #   its own GPU context. GPU memory is small per trial (~140 MiB for
-        #   195 features), allowing concurrent trials without conflict.
-        #   Use cfg.tuning.n_jobs as configured.
+        # Determine Optuna trial parallelism based on model compute device.
+        #
+        # GPU VRAM footprint on RTX 2060 (6 GB) at 195 features:
+        #   LightGBM (OpenCL)  ~140 MiB  → parallel trials safe
+        #   XGBoost  (CUDA)    ~179 MiB  → parallel trials safe
+        #   CatBoost (GPU)     ~5.4 GB   → only one trial at a time
+        #
+        # CPU models with n_jobs=-1 must be sequential to avoid oversubscription.
         try:
             sample = suggest_params(study.ask(), model_name)
-            uses_gpu = sample.get("device") == "gpu"
+            uses_lgbm_gpu = sample.get("device") == "gpu"  # OpenCL
+            uses_xgb_gpu = sample.get("device") == "cuda"  # CUDA
+            uses_catboost_gpu = sample.get("task_type") == "GPU"  # ~5.4 GB
             uses_all_cpu = sample.get("n_jobs", 1) == -1
 
-            if uses_gpu:
-                # GPU: parallelism is safe and beneficial — keep cfg value
+            if uses_catboost_gpu:
                 if n_jobs != 1:
                     logger.info(
-                        "Model device=gpu — Optuna n_jobs=%d "
-                        "(GPU trials run in separate processes).",
+                        "CatBoost task_type=GPU uses ~5.4 GB VRAM — forcing Optuna n_jobs=1."
+                    )
+                n_jobs = 1
+            elif uses_lgbm_gpu or uses_xgb_gpu:
+                if n_jobs != 1:
+                    logger.info(
+                        "Model GPU device — Optuna n_jobs=%d "
+                        "(each trial runs in a separate process).",
                         n_jobs,
                     )
             elif uses_all_cpu and n_jobs != 1:
                 logger.info(
-                    "Model n_jobs=-1 (CPU) — forcing Optuna n_jobs=1 to avoid oversubscription."
+                    "Model n_jobs=-1 (CPU) — forcing Optuna n_jobs=1 to avoid CPU oversubscription."
                 )
                 n_jobs = 1
         except Exception:
