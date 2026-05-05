@@ -340,8 +340,9 @@ _SUGGEST_FN = {
 def suggest_params(trial: optuna.Trial, model_name: str) -> dict[str, Any]:
     """Suggest hyperparameters for a given model — single entry point.
 
-    All conditionals are resolved here. The returned dict is ready to
-    pass directly to the model factory.
+    All conditionals are resolved here. FIXED constants (n_jobs, verbose,
+    random_state, seed) are merged in so the returned dict is complete and
+    ready to pass directly to the model factory.
 
     Args:
         trial: Optuna trial.
@@ -351,9 +352,10 @@ def suggest_params(trial: optuna.Trial, model_name: str) -> dict[str, Any]:
         KeyError: If model_name has no registered suggest function.
 
     Returns:
-        Dict of hyperparameters with all conditionals resolved.
+        Dict of hyperparameters with all conditionals resolved and FIXED
+        constants merged in.
     """
     fn = _SUGGEST_FN.get(model_name)
     if fn is None:
         raise KeyError(f"No suggest function for '{model_name}'. Available: {list(_SUGGEST_FN)}")
-    return fn(trial)
+    return {**FIXED, **fn(trial)}
