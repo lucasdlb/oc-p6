@@ -28,16 +28,18 @@ mlruns/
 mlflow.db
 *.db
 models/
-!src/credit-risk/models/
-!src/credit-risk/models/*.py$
+!src/credit_risk/models/
+!src/credit_risk/models/**
+src/credit_risk/models/**/__pycache__/
 */__pycache__/*
 *.pkl
 *.parquet
 
 # Data
 data/
-!src/credit-risk/data/*
-!src/credit-risk/data/*.py
+!src/credit_risk/data/
+!src/credit_risk/data/**
+src/credit_risk/data/**/__pycache__/
 *.csv
 
  /notebooks/
