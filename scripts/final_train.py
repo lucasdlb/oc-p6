@@ -68,7 +68,11 @@ def load_features(run_mode: str) -> list[str]:
 
     Falls back through modes: prod → dev → debug.
     """
-    fallback_order = {"prod": ["prod", "dev", "debug"], "dev": ["dev", "debug"], "debug": ["debug"]}
+    fallback_order = {
+        "prod": ["prod", "dev", "debug"],
+        "dev": ["prod", "dev", "debug"],
+        "debug": ["prod", "dev", "debug"],
+    }
     modes_to_try = fallback_order.get(run_mode, [run_mode])
 
     for mode in modes_to_try:

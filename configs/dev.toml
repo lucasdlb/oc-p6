@@ -43,10 +43,10 @@ tolerance = 0.005
 nb_remove_features = 0.2
 
 [importance]
-method = "shap"
+method = "inner"
 
 [tuning]
-n_trials = 5
+n_trials = 50
 timeout = 1800
 study_name = "dev_tuning"
 direction = "maximize"
@@ -55,9 +55,10 @@ pruner = "median"
 models = [
     "lgbm",
     "hist_gbm",
+    "xgboost",
 ]
 x_transform = "none"
-#nan_fill = "none"
+#nan_fill = "median_mode"
 
 [resampling]
 enabled = false

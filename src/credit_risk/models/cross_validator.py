@@ -34,6 +34,7 @@ class FoldResult:
     y_true: np.ndarray
     y_prob: np.ndarray
     importances: np.ndarray | None = None
+    feature_names: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -107,19 +108,41 @@ class CVMetrics:
             std_scores[metric] = float(np.std(values))
 
         mean_importances: np.ndarray | None = None
-        importances = [
-            fr.importances for fr in cv_result.fold_results if fr.importances is not None
+        imp_folds = [
+            (fr.importances, fr.feature_names)
+            for fr in cv_result.fold_results
+            if fr.importances is not None
         ]
-        if importances:
-            shapes = {imp.shape[0] for imp in importances}
+        if imp_folds:
+            shapes = {imp.shape[0] for imp, _ in imp_folds}
             if len(shapes) == 1:
-                mean_importances = np.mean(importances, axis=0)
+                # All folds have the same feature set — simple mean
+                mean_importances = np.mean([imp for imp, _ in imp_folds], axis=0)
             else:
-                logger.warning(
-                    "CVMetrics: importance arrays have inconsistent shapes across folds %s — "
-                    "skipping mean importances.",
-                    sorted(shapes),
-                )
+                # Feature sets differ across folds (encoder boundary differences).
+                # Align each fold's importances to the canonical CVResult feature
+                # list, filling missing features with 0, then average.
+                canonical = cv_result.feature_names
+                if canonical:
+                    name_to_imp: dict[str, list[float]] = {n: [] for n in canonical}
+                    for imp, names in imp_folds:
+                        for feat_idx, feat in enumerate(names):
+                            if feat in name_to_imp and feat_idx < len(imp):
+                                name_to_imp[feat].append(float(imp[feat_idx]))
+                    mean_importances = np.array(
+                        [float(np.mean(vals)) if vals else 0.0 for vals in name_to_imp.values()]
+                    )
+                    logger.debug(
+                        "CVMetrics: aligned importance shapes %s → %d features.",
+                        sorted(shapes),
+                        len(canonical),
+                    )
+                else:
+                    logger.warning(
+                        "CVMetrics: importance shapes %s differ and no feature names "
+                        "available for alignment — skipping.",
+                        sorted(shapes),
+                    )
 
         return CVScores(
             mean_scores=mean_scores,

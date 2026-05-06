@@ -173,6 +173,7 @@ class ProcessingCV:
                     y_true=fa.y_val,
                     y_prob=y_pred,
                     importances=importances,
+                    feature_names=fa.feature_names,
                 )
             )
 
@@ -263,6 +264,7 @@ class ProcessingCV:
                     y_true=y_val,
                     y_prob=y_pred,
                     importances=importances,
+                    feature_names=active_feature_names,
                 )
             )
 

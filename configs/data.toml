@@ -46,11 +46,7 @@ cleaner = "ApplicationCleaner"
 imputer = "ApplicationImputer"
 aggregator = "NoOpStep"
 transformer = "ApplicationTransformer"
-#encoder = "PolarsOneHotEncoder"
-#encoder = "CategoricalEncoder"
-encoder = "PolarsTargetEncoder"
-
-
+encoder = "CategoricalEncoder"
 
 [data.bureau]
 include = true
@@ -64,7 +60,7 @@ encoder = "PolarsOneHotEncoder"
 include = true
 cleaner = "BureauBalanceCleaner"
 imputer = "NoOpStep"
-aggregator = "BureauBalanceAggregator"
+aggregator = "MinimalBureauBalanceAggregator"
 transformer = "BureauBalanceTransformer"
 encoder = "NoOpStep"
 
@@ -74,7 +70,7 @@ cleaner = "PreviousApplicationCleaner"
 imputer = "NoOpStep"
 aggregator = "PreviousApplicationAggregator"
 transformer = "PreviousApplicationTransformer"
-encoder = "PolarsOneHotEncoder"
+encoder = "CategoricalEncoder"
 
 [data.pos_cash_balance]
 include = true
@@ -82,20 +78,20 @@ cleaner = "POSCashBalanceCleaner"
 imputer = "NoOpStep"
 aggregator = "POSCashBalanceAggregator"
 transformer = "POSCashBalanceTransformer"
-encoder = "PolarsOneHotEncoder"
+encoder = "CategoricalEncoder"
 
 [data.installments]
 include = true
 cleaner = "InstallmentsCleaner"
 imputer = "NoOpStep"
-aggregator = "InstallmentsAggregator"
-transformer = "InstallmentsTransformer"
+aggregator = "DetailedInstallmentsAggregator"
+transformer = "NoOpStep"
 encoder = "NoOpStep"
 
 [data.credit_card_balance]
 include = true
 cleaner = "CreditCardBalanceCleaner"
 imputer = "NoOpStep"
-aggregator = "CreditCardBalanceAggregator"
+aggregator = "MinimalCreditCardAggregator"
 transformer = "CreditCardBalanceTransformer"
 encoder = "PolarsOneHotEncoder"

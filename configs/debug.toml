@@ -48,9 +48,9 @@ n_trials = 2
 timeout = 300
 study_name = "debug_tuning"
 direction = "maximize"
-n_jobs = 1
+n_jobs = 4
 pruner = "median"
-models = ["lgbm"]
+models = ["lgbm", "catboost", "xgboost", "hist_gbm"]
 x_transform = "none"
 nan_fill = 0
 
