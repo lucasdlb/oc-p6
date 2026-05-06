@@ -64,98 +64,108 @@ ALL_TABLES = [
 
 
 def load_features(run_mode: str) -> list[str]:
-    """Load selected features from best rfe_cv_all_{mode} MLflow run."""
-    experiment_name = f"rfe_cv_all_{run_mode}"
-    experiment = mlflow.get_experiment_by_name(experiment_name)
-    if experiment is None:
-        raise RuntimeError(
-            f"MLflow experiment '{experiment_name}' not found. Run rfe_cv.py first (combined mode)."
+    """Load selected features from best rfe_cv_all MLflow run.
+
+    Falls back through modes: prod → dev → debug.
+    """
+    fallback_order = {"prod": ["prod", "dev", "debug"], "dev": ["dev", "debug"], "debug": ["debug"]}
+    modes_to_try = fallback_order.get(run_mode, [run_mode])
+
+    for mode in modes_to_try:
+        experiment_name = f"rfe_cv_all_{mode}"
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        if experiment is None:
+            continue
+
+        runs = mlflow.search_runs(
+            experiment_ids=[experiment.experiment_id],
+            filter_string="metrics.cv_roc_auc > 0",
+            order_by=["metrics.cv_roc_auc DESC"],
+            max_results=1,
         )
+        if runs.empty:
+            continue
 
-    runs = mlflow.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        filter_string="metrics.cv_roc_auc > 0",
-        order_by=["metrics.cv_roc_auc DESC"],
-        max_results=1,
-    )
-    if runs.empty:
-        raise RuntimeError(f"No completed runs in '{experiment_name}'.")
+        run_id = runs.iloc[0]["run_id"]
+        cv_roc_auc = runs.iloc[0]["metrics.cv_roc_auc"]
+        if mode != run_mode:
+            logger.warning(
+                "No rfe_cv_all_%s run found — falling back to rfe_cv_all_%s", run_mode, mode
+            )
+        logger.info("Features from run %s (cv_roc_auc=%.4f, mode=%s)", run_id[:8], cv_roc_auc, mode)
 
-    run_id = runs.iloc[0]["run_id"]
-    cv_roc_auc = runs.iloc[0]["metrics.cv_roc_auc"]
-    logger.info("Features from run %s (cv_roc_auc=%.4f)", run_id[:8], cv_roc_auc)
+        path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="features.json")
+        data = json.loads(Path(path).read_text())
+        logger.info("Loaded %d features", data["n_features"])
+        return data["features"]
 
-    path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="features.json")
-    data = json.loads(Path(path).read_text())
-    logger.info("Loaded %d features", data["n_features"])
-    return data["features"]
+    raise RuntimeError(f"No rfe_cv_all run found for any of {modes_to_try}. Run rfe_cv.py first.")
 
 
 def load_best_config(run_mode: str) -> tuple[str, dict] | None:
-    """Load best model type and params from {mode}_tuning MLflow experiment.
+    """Load best model type and params from tuning MLflow experiment.
 
-    Queries the top-level tuning run for best_model param, then downloads
-    best_config.json from the corresponding model child run.
-
+    Falls back through modes: prod → dev → debug.
     Returns (model_name, params_dict) or None if no tuning run found.
     """
-    experiment_name = f"{run_mode}_tuning"
-    experiment = mlflow.get_experiment_by_name(experiment_name)
-    if experiment is None:
-        logger.warning(
-            "Tuning experiment '%s' not found — will use config params.", experiment_name
-        )
-        return None
+    fallback_order = {"prod": ["prod", "dev", "debug"], "dev": ["dev", "debug"], "debug": ["debug"]}
+    modes_to_try = fallback_order.get(run_mode, [run_mode])
 
-    # Find the top-level tuning run (no parent)
     client = mlflow.MlflowClient()
-    runs = mlflow.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        filter_string="metrics.best_roc_auc > 0",
-        order_by=["metrics.best_roc_auc DESC"],
-        max_results=5,
-    )
-    if runs.empty:
-        logger.warning("No completed tuning runs found — will use config params.")
-        return None
 
-    for _, row in runs.iterrows():
-        run = client.get_run(row["run_id"])
-        # Top-level tuning run has best_model param
-        best_model = run.data.params.get("best_model")
-        if best_model is None:
+    for mode in modes_to_try:
+        experiment_name = f"{mode}_tuning"
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        if experiment is None:
             continue
 
-        best_roc_auc = row.get("metrics.best_roc_auc", 0.0)
-        logger.info(
-            "Tuning run %s: best_model=%s  best_roc_auc=%.4f",
-            row["run_id"][:8],
-            best_model,
-            best_roc_auc,
-        )
-
-        # Find the model child run with best_config.json
-        child_runs = client.search_runs(
+        runs = mlflow.search_runs(
             experiment_ids=[experiment.experiment_id],
-            filter_string=f"params.model_type = '{best_model}'",
+            filter_string="metrics.best_roc_auc > 0",
+            order_by=["metrics.best_roc_auc DESC"],
+            max_results=5,
         )
-        for child in child_runs:
-            artifacts = [a.path for a in client.list_artifacts(child.info.run_id)]
-            if "best_config.json" in artifacts:
-                path = mlflow.artifacts.download_artifacts(
-                    run_id=child.info.run_id, artifact_path="best_config.json"
-                )
-                config = json.loads(Path(path).read_text())
-                params = config.get("best_params", {})
-                logger.info(
-                    "Loaded best_config.json from %s run %s (%d params)",
-                    best_model,
-                    child.info.run_id[:8],
-                    len(params),
-                )
-                return best_model, params
+        if runs.empty:
+            continue
 
-    logger.warning("No best_config.json found in tuning runs — will use config params.")
+        for _, row in runs.iterrows():
+            run = client.get_run(row["run_id"])
+            best_model = run.data.params.get("best_model")
+            if best_model is None:
+                continue
+
+            best_roc_auc = row.get("metrics.best_roc_auc", 0.0)
+            if mode != run_mode:
+                logger.warning("No %s_tuning run found — falling back to %s_tuning", run_mode, mode)
+            logger.info(
+                "Tuning run %s: best_model=%s  best_roc_auc=%.4f (mode=%s)",
+                row["run_id"][:8],
+                best_model,
+                best_roc_auc,
+                mode,
+            )
+
+            child_runs = client.search_runs(
+                experiment_ids=[experiment.experiment_id],
+                filter_string=f"params.model_type = '{best_model}'",
+            )
+            for child in child_runs:
+                artifacts = [a.path for a in client.list_artifacts(child.info.run_id)]
+                if "best_config.json" in artifacts:
+                    path = mlflow.artifacts.download_artifacts(
+                        run_id=child.info.run_id, artifact_path="best_config.json"
+                    )
+                    config = json.loads(Path(path).read_text())
+                    params = config.get("best_params", {})
+                    logger.info(
+                        "Loaded best_config.json from %s run %s (%d params)",
+                        best_model,
+                        child.info.run_id[:8],
+                        len(params),
+                    )
+                    return best_model, params
+
+    logger.warning("No best_config.json found in any tuning run — will use config params.")
     return None
 
 
