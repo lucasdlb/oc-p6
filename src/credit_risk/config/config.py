@@ -45,13 +45,20 @@ def load_config(*enable: str) -> "Config":
 
     The caller declares which optional configs are needed by name.
     Values always come from the TOML files - the caller owns "shape", TOML owns "values".
+
+    Environment variables:
+        RUN_MODE:    selects the run-mode TOML (debug/dev/prod, default: prod)
+        DATA_CONFIG: path relative to configs/ for the data TOML
+                     (default: data.toml).  Example: DATA_CONFIG=data/test
     """
     from credit_risk.config.models import Config
 
     mode = os.getenv("RUN_MODE", "prod")
+    data_config = os.getenv("DATA_CONFIG", "data")
+    data_toml = CONFIG_DIR / f"{data_config}.toml"
     raw = {
         **_read_toml(CONFIG_DIR / f"{mode}.toml"),
-        **_read_toml(CONFIG_DIR / "data.toml"),
+        **_read_toml(data_toml),
     }
 
     # Only populate optional configs that are explicitly enabled

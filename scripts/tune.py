@@ -60,7 +60,7 @@ def _load_feature_mask(run_mode: str, tracking_uri: str) -> list[str] | None:
     Returns None if no suitable run is found — tuning will then run on all
     features (degraded mode, with a warning).
     """
-    experiment_name = f"rfe_cv_all_{run_mode}"
+    experiment_name = "rfe_cv_all_dev"
     experiment = mlflow.get_experiment_by_name(experiment_name)
     if experiment is None:
         logger.warning(

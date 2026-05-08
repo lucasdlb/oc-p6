@@ -40,6 +40,8 @@ data/
 !src/credit_risk/data/
 !src/credit_risk/data/**
 src/credit_risk/data/**/__pycache__/
+!configs/data/
+!configs/data/**
 *.csv
 
  /notebooks/

@@ -1,5 +1,10 @@
-# Data configuration - static project constants
-# Does not change between run modes (debug/dev/prod)
+# Data config for tests — exercises all real processing steps.
+# Every table uses its actual cleaner/imputer/aggregator/transformer/encoder.
+# NoOpStep is intentionally absent so column-presence tests always catch
+# a step being accidentally disabled in data.toml.
+#
+# To override a specific table back to NoOpStep in a test, use a fixture
+# that patches the relevant registry key via monkeypatch.
 
 [data]
 data_dir = "data"
@@ -51,7 +56,7 @@ encoder = "CategoricalEncoder"
 [data.bureau]
 include = true
 cleaner = "BureauCleaner"
-imputer = "NoOpStep"
+imputer = "BureauImputer"
 aggregator = "BureauAggregator"
 transformer = "BureauTransformer"
 encoder = "PolarsOneHotEncoder"
@@ -59,15 +64,15 @@ encoder = "PolarsOneHotEncoder"
 [data.bureau_balance]
 include = true
 cleaner = "BureauBalanceCleaner"
-imputer = "NoOpStep"
-aggregator = "MinimalBureauBalanceAggregator"
+imputer = "BureauBalanceImputer"
+aggregator = "DefaultBureauBalanceAggregator"
 transformer = "BureauBalanceTransformer"
 encoder = "NoOpStep"
 
 [data.previous_application]
 include = true
 cleaner = "PreviousApplicationCleaner"
-imputer = "NoOpStep"
+imputer = "PreviousApplicationImputer"
 aggregator = "PreviousApplicationAggregator"
 transformer = "PreviousApplicationTransformer"
 encoder = "CategoricalEncoder"
@@ -75,7 +80,7 @@ encoder = "CategoricalEncoder"
 [data.pos_cash_balance]
 include = true
 cleaner = "POSCashBalanceCleaner"
-imputer = "NoOpStep"
+imputer = "POSCashBalanceImputer"
 aggregator = "POSCashBalanceAggregator"
 transformer = "POSCashBalanceTransformer"
 encoder = "CategoricalEncoder"
@@ -83,7 +88,7 @@ encoder = "CategoricalEncoder"
 [data.installments]
 include = true
 cleaner = "InstallmentsCleaner"
-imputer = "NoOpStep"
+imputer = "InstallmentsImputer"
 aggregator = "DetailedInstallmentsAggregator"
 transformer = "InstallmentsTransformer"
 encoder = "NoOpStep"
@@ -91,7 +96,7 @@ encoder = "NoOpStep"
 [data.credit_card_balance]
 include = true
 cleaner = "CreditCardBalanceCleaner"
-imputer = "NoOpStep"
-aggregator = "MinimalCreditCardAggregator"
+imputer = "CreditCardBalanceImputer"
+aggregator = "DefaultCreditCardAggregator"
 transformer = "CreditCardBalanceTransformer"
 encoder = "PolarsOneHotEncoder"

@@ -41,7 +41,7 @@ nb_remove_features = 0.3
 method = "inner"
 
 [tuning]
-n_trials = 5
+n_trials = 60
 timeout = 7200
 study_name = "prod_tuning"
 direction = "maximize"
