@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from credit_risk.data.transformation.registry import TransformerRegistry
+from credit_risk_processing.data.transformation.registry import TransformerRegistry
 
 
 def test_transformer_transforms_application_table(sample_dataframe):

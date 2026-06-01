@@ -24,9 +24,8 @@ from collections.abc import Callable
 
 import numpy as np
 import polars as pl
+from credit_risk_processing.data.base import NoOpStep
 from sklearn.pipeline import Pipeline
-
-from credit_risk.data.base import NoOpStep
 
 
 class TableTransformer:

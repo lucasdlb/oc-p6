@@ -5,7 +5,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from credit_risk.data.transformation.cross import CrossTableTransformer
+from credit_risk_processing.data.transformation.cross import CrossTableTransformer
 
 
 class TestCrossTableTransformer:
@@ -146,19 +146,19 @@ class TestCrossTableTransformer:
         assert "cross" in result
 
     def test_registered_in_transformer_registry(self):
-        from credit_risk.data.transformation import TransformerRegistry
+        from credit_risk_processing.data.transformation import TransformerRegistry
 
         assert "CrossTableTransformer" in TransformerRegistry.available()
 
     def test_noop_resolves_to_noop(self):
-        from credit_risk.data.base import NoOpStep
-        from credit_risk.data.transformation import TransformerRegistry
+        from credit_risk_processing.data.base import NoOpStep
+        from credit_risk_processing.data.transformation import TransformerRegistry
 
         cls = TransformerRegistry.get("NoOpStep")
         assert cls is NoOpStep
 
     def test_unknown_key_raises(self):
-        from credit_risk.data.transformation import TransformerRegistry
+        from credit_risk_processing.data.transformation import TransformerRegistry
 
         with pytest.raises(KeyError, match="not found"):
             TransformerRegistry.get("NonExistentTransformer")

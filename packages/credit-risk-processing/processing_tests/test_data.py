@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-
 from credit_risk.config import load_config
-from credit_risk.data.aggregation.registry import AggregatorRegistry
-from credit_risk.data.cleaning.registry import CleaningRegistry
-from credit_risk.data.encoding.registry import EncodingRegistry
-from credit_risk.data.imputation.registry import ImputationRegistry
-from credit_risk.data.transformation.registry import TransformerRegistry
+
+from credit_risk_processing.data.aggregation.registry import AggregatorRegistry
+from credit_risk_processing.data.cleaning.registry import CleaningRegistry
+from credit_risk_processing.data.encoding.registry import EncodingRegistry
+from credit_risk_processing.data.imputation.registry import ImputationRegistry
+from credit_risk_processing.data.transformation.registry import TransformerRegistry
 
 
 @pytest.fixture(scope="module")
@@ -1032,7 +1032,7 @@ def test_pipeline_bureau(cfg):
 def test_schema_enforcer():
     import polars as pl
 
-    from credit_risk.data.base import SchemaEnforcer
+    from credit_risk_processing.data.base import SchemaEnforcer
 
     enforcer = SchemaEnforcer()
     df = pl.DataFrame({"SK_ID_CURR": [1, 2], "a": [3, 4]})

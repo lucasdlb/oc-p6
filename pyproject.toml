@@ -1,3 +1,9 @@
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+credit-risk-processing = { workspace = true }
+
 [project]
 name = "oc-p6"
 version = "0.1.0"
@@ -5,6 +11,7 @@ description = "Credit Risk ML POC - Predicting credit default"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "credit-risk-processing",
     "polars>=1.0.0",
     "pyarrow>=15.0.0",
     "scikit-learn>=1.5.0",
@@ -27,10 +34,11 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "packages/credit-risk-processing/processing_tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+addopts = "--import-mode=importlib"
 #addopts = """
 #    --cov=src
 #    --cov-report=term-missing
