@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-from credit_risk.data.aggregation import AggregatorRegistry
-from credit_risk.data.base import NoOpStep, ProcessingStep, StatelessStep
-from credit_risk.data.cleaning import CleaningRegistry
-from credit_risk.data.encoding import CategoricalEncoder, EncodingRegistry, PolarsOneHotEncoder
-from credit_risk.data.imputation import ImputationRegistry
+# Step classes and registries — from shared package
+from credit_risk_processing.data import (
+    AggregatorRegistry,
+    CategoricalEncoder,
+    CleaningRegistry,
+    EncodingRegistry,
+    ImputationRegistry,
+    NoOpStep,
+    PolarsOneHotEncoder,
+    ProcessingStep,
+    StatelessStep,
+    TransformerRegistry,
+)
+
+# Loader — training-specific, stays local
 from credit_risk.data.loader import (
     TABLE_NAMES,
     BaseDataLoader,
@@ -15,7 +25,6 @@ from credit_risk.data.loader import (
     PLLazyDataLoader,
     get_table_csv_names,
 )
-from credit_risk.data.transformation import TransformerRegistry
 
 __all__ = [
     # Base

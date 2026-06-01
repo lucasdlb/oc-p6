@@ -9,15 +9,15 @@ chaining automatically and supports clone() for clean re-instantiation.
 
 from __future__ import annotations
 
+from credit_risk_processing.data.aggregation.registry import AggregatorRegistry
+from credit_risk_processing.data.base import SchemaEnforcer
+from credit_risk_processing.data.cleaning.registry import CleaningRegistry
+from credit_risk_processing.data.encoding.registry import EncodingRegistry
+from credit_risk_processing.data.imputation.registry import ImputationRegistry
+from credit_risk_processing.data.transformation.registry import TransformerRegistry
 from sklearn.pipeline import Pipeline
 
 from credit_risk.config import TableConfig
-from credit_risk.data.aggregation.registry import AggregatorRegistry
-from credit_risk.data.base import SchemaEnforcer
-from credit_risk.data.cleaning.registry import CleaningRegistry
-from credit_risk.data.encoding.registry import EncodingRegistry
-from credit_risk.data.imputation.registry import ImputationRegistry
-from credit_risk.data.transformation.registry import TransformerRegistry
 
 
 class ProcessingPipeline:
