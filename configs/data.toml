@@ -1,0 +1,97 @@
+# Data configuration - static project constants
+# Does not change between run modes (debug/dev/prod)
+
+[data]
+data_dir = "data"
+output_dir = "output"
+
+[target]
+column = "TARGET"
+id_column = "SK_ID_CURR"
+
+[sources]
+application = "data/application_train.csv"
+bureau = "data/bureau.csv"
+bureau_balance = "data/bureau_balance.csv"
+previous_application = "data/previous_application.csv"
+pos_cash_balance = "data/POS_CASH_balance.csv"
+installments = "data/installments_payments.csv"
+credit_card_balance = "data/credit_card_balance.csv"
+
+[data.features]
+drop_always = ["SK_ID_CURR", "SK_ID_BUREAU", "SK_ID_PREV"]
+categorical = [
+    "NAME_CONTRACT_TYPE",
+    "CODE_GENDER",
+    "FLAG_OWN_CAR",
+    "FLAG_OWN_REALTY",
+    "NAME_INCOME_TYPE",
+    "NAME_EDUCATION_TYPE",
+    "NAME_FAMILY_STATUS",
+    "NAME_HOUSING_TYPE",
+    "WEEKDAY_APPR_PROCESS_START",
+    "FONKAPARTNER_MODE",
+    "EMERGENCYSTATE_MODE",
+    "WALLSMATERIAL_MODE",
+    "HOUSETYPE_MODE",
+]
+ext_source = ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
+
+[data.cross]
+transformer = "CrossTableTransformer"
+
+[data.application]
+include = true
+cleaner = "ApplicationCleaner"
+imputer = "ApplicationImputer"
+aggregator = "NoOpStep"
+transformer = "ApplicationTransformer"
+encoder = "CategoricalEncoder"
+
+[data.bureau]
+include = true
+cleaner = "BureauCleaner"
+imputer = "NoOpStep"
+aggregator = "BureauAggregator"
+transformer = "BureauTransformer"
+encoder = "PolarsOneHotEncoder"
+
+[data.bureau_balance]
+include = true
+cleaner = "BureauBalanceCleaner"
+imputer = "NoOpStep"
+aggregator = "MinimalBureauBalanceAggregator"
+transformer = "BureauBalanceTransformer"
+encoder = "NoOpStep"
+
+[data.previous_application]
+include = true
+cleaner = "PreviousApplicationCleaner"
+imputer = "NoOpStep"
+aggregator = "PreviousApplicationAggregator"
+transformer = "PreviousApplicationTransformer"
+encoder = "CategoricalEncoder"
+
+[data.pos_cash_balance]
+include = true
+cleaner = "POSCashBalanceCleaner"
+imputer = "NoOpStep"
+aggregator = "POSCashBalanceAggregator"
+transformer = "POSCashBalanceTransformer"
+encoder = "CategoricalEncoder"
+
+[data.installments]
+include = true
+cleaner = "InstallmentsCleaner"
+imputer = "NoOpStep"
+aggregator = "DetailedInstallmentsAggregator"
+transformer = "InstallmentsTransformer"
+encoder = "NoOpStep"
+
+[data.credit_card_balance]
+include = true
+cleaner = "CreditCardBalanceCleaner"
+imputer = "NoOpStep"
+aggregator = "MinimalCreditCardAggregator"
+transformer = "CreditCardBalanceTransformer"
+encoder = "PolarsOneHotEncoder"

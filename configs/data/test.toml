@@ -1,0 +1,102 @@
+# Data config for tests — exercises all real processing steps.
+# Every table uses its actual cleaner/imputer/aggregator/transformer/encoder.
+# NoOpStep is intentionally absent so column-presence tests always catch
+# a step being accidentally disabled in data.toml.
+#
+# To override a specific table back to NoOpStep in a test, use a fixture
+# that patches the relevant registry key via monkeypatch.
+
+[data]
+data_dir = "data"
+output_dir = "output"
+
+[target]
+column = "TARGET"
+id_column = "SK_ID_CURR"
+
+[sources]
+application = "data/application_train.csv"
+bureau = "data/bureau.csv"
+bureau_balance = "data/bureau_balance.csv"
+previous_application = "data/previous_application.csv"
+pos_cash_balance = "data/POS_CASH_balance.csv"
+installments = "data/installments_payments.csv"
+credit_card_balance = "data/credit_card_balance.csv"
+
+[data.features]
+drop_always = ["SK_ID_CURR", "SK_ID_BUREAU", "SK_ID_PREV"]
+categorical = [
+    "NAME_CONTRACT_TYPE",
+    "CODE_GENDER",
+    "FLAG_OWN_CAR",
+    "FLAG_OWN_REALTY",
+    "NAME_INCOME_TYPE",
+    "NAME_EDUCATION_TYPE",
+    "NAME_FAMILY_STATUS",
+    "NAME_HOUSING_TYPE",
+    "WEEKDAY_APPR_PROCESS_START",
+    "FONKAPARTNER_MODE",
+    "EMERGENCYSTATE_MODE",
+    "WALLSMATERIAL_MODE",
+    "HOUSETYPE_MODE",
+]
+ext_source = ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]
+
+[data.cross]
+transformer = "CrossTableTransformer"
+
+[data.application]
+include = true
+cleaner = "ApplicationCleaner"
+imputer = "ApplicationImputer"
+aggregator = "NoOpStep"
+transformer = "ApplicationTransformer"
+encoder = "CategoricalEncoder"
+
+[data.bureau]
+include = true
+cleaner = "BureauCleaner"
+imputer = "BureauImputer"
+aggregator = "BureauAggregator"
+transformer = "BureauTransformer"
+encoder = "PolarsOneHotEncoder"
+
+[data.bureau_balance]
+include = true
+cleaner = "BureauBalanceCleaner"
+imputer = "BureauBalanceImputer"
+aggregator = "DefaultBureauBalanceAggregator"
+transformer = "BureauBalanceTransformer"
+encoder = "NoOpStep"
+
+[data.previous_application]
+include = true
+cleaner = "PreviousApplicationCleaner"
+imputer = "PreviousApplicationImputer"
+aggregator = "PreviousApplicationAggregator"
+transformer = "PreviousApplicationTransformer"
+encoder = "CategoricalEncoder"
+
+[data.pos_cash_balance]
+include = true
+cleaner = "POSCashBalanceCleaner"
+imputer = "POSCashBalanceImputer"
+aggregator = "POSCashBalanceAggregator"
+transformer = "POSCashBalanceTransformer"
+encoder = "CategoricalEncoder"
+
+[data.installments]
+include = true
+cleaner = "InstallmentsCleaner"
+imputer = "InstallmentsImputer"
+aggregator = "DetailedInstallmentsAggregator"
+transformer = "InstallmentsTransformer"
+encoder = "NoOpStep"
+
+[data.credit_card_balance]
+include = true
+cleaner = "CreditCardBalanceCleaner"
+imputer = "CreditCardBalanceImputer"
+aggregator = "DefaultCreditCardAggregator"
+transformer = "CreditCardBalanceTransformer"
+encoder = "PolarsOneHotEncoder"

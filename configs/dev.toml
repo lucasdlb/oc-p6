@@ -1,0 +1,68 @@
+# Dev mode - moderate execution
+
+[run]
+mode = "dev"
+sample_fraction = 0.5
+random_state = 42
+
+[splitter]
+test_size = 0.2
+n_splits = 3
+cv_random_state = 42
+test_random_state = 42
+stratify = true
+shuffle = true
+
+[model]
+model_type = "lgbm"
+x_transform = "none"
+
+[model.params]
+max_depth = 13
+n_estimators = 1628
+learning_rate = 0.010693009871179241
+num_leaves = 37
+min_child_samples = 115
+feature_fraction = 0.60506512796031
+bagging_fraction = 0.8773772642676346
+bagging_freq = 4
+lambda_l1 = 4.038571041629981
+lambda_l2 = 6.735227145532746e-06
+min_split_gain = 0.251499469339536
+subsample = 0.8
+colsample_bytree = 0.8
+reg_alpha = 0.1
+reg_lambda = 0.1
+n_jobs = -1
+class_weight = "balanced"
+verbose = -1
+
+[selection]
+min_features = 10
+tolerance = 0.005
+nb_remove_features = 0.2
+
+[importance]
+method = "inner"
+
+[tuning]
+n_trials = 50
+timeout = 1800
+study_name = "dev_tuning"
+direction = "maximize"
+n_jobs = 4
+pruner = "median"
+models = [
+    "lgbm",
+    "hist_gbm",
+    "xgboost",
+]
+x_transform = "none"
+#nan_fill = "median_mode"
+
+[resampling]
+enabled = false
+method = "smote"
+sampling_strategy = "minority"
+k_neighbors = 5
+random_state = 42
