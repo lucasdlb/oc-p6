@@ -27,7 +27,7 @@ import polars as pl
 
 from credit_risk.config import load_config
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.data.transformation import TransformerRegistry
+from credit_risk_processing.data.transformation import TransformerRegistry
 from credit_risk.mlflow_utils import MlflowLogger
 from credit_risk.models.metrics import ClassificationRankingMetrics
 from credit_risk.models.processing_tuner import ProcessingTuner

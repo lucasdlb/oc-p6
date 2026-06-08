@@ -1,19 +1,6 @@
 """Pytest configuration and fixtures for credit-risk-processing package tests."""
 
-import os
-
 import pytest
-
-# Use the test data config so column-presence tests always exercise real transformers.
-# Individual tests that need a NoOpStep can override via monkeypatch.
-os.environ.setdefault("DATA_CONFIG", "data/test")
-
-
-@pytest.fixture
-def cfg():
-    from credit_risk.config import load_config
-
-    return load_config()
 
 
 @pytest.fixture

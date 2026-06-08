@@ -7,7 +7,7 @@ import polars as pl
 
 from credit_risk.config import load_config
 from credit_risk.data.loader import PLDataLoader
-from credit_risk.data.transformation import TransformerRegistry
+from credit_risk_processing.data.transformation import TransformerRegistry
 from credit_risk.pipeline.processing_pipeline import ProcessingPipeline
 from credit_risk.pipeline.table_transformer import TableTransformer
 

@@ -225,6 +225,47 @@ class TableTransformer:
 
         return X_train, X_val, y_train, y_val, feature_cols
 
+    def fit_pipelines(
+        self,
+        tables: dict[str, pl.DataFrame],
+        labels: pl.DataFrame,
+    ) -> dict[str, Pipeline]:
+        """Fit all processing pipelines on the full dataset and return them.
+
+        Unlike fit_transform(), this fits each pipeline on ALL provided data
+        (no train/val split) and returns the fitted pipelines for use in
+        InferencePipeline. The training side calls this to capture fitted
+        processing steps that the inference side can then use via transform()
+        without re-fitting.
+
+        Args:
+            tables: Mapping of table name → raw Polars DataFrame.
+            labels: Polars DataFrame with id_column and target_column columns.
+
+        Returns:
+            Dict of table_name → fitted sklearn Pipeline.
+        """
+        fitted: dict[str, Pipeline] = {}
+
+        for name, raw in tables.items():
+            df = raw.clone()
+
+            y_data = (
+                labels.filter(pl.col(self.id_column).is_in(df.select(self.id_column).to_series()))
+                .select(self.target_column)
+                .to_numpy()
+                .ravel()
+            )
+
+            if self.target_column in df.columns:
+                df = df.drop(self.target_column)
+
+            pipe = self.pipeline_factories[name]()
+            pipe.fit(df, y=y_data)
+            fitted[name] = pipe
+
+        return fitted
+
     def _join_all(
         self,
         base: pl.DataFrame,

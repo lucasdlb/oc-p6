@@ -26,11 +26,12 @@ import mlflow
 import numpy as np
 import polars as pl
 import shap
+from credit_risk_models import InferencePipeline
+from credit_risk_processing.data.transformation import TransformerRegistry
 from matplotlib import pyplot as plt
 
 from credit_risk.config import load_config
 from credit_risk.data.loader import PLLazyDataLoader
-from credit_risk.data.transformation import TransformerRegistry
 from credit_risk.mlflow_utils import MlflowLogger
 from credit_risk.models.final_model import FinalModelTrainer
 from credit_risk.models.plotter import ModelPlotter
@@ -360,6 +361,21 @@ def main() -> None:
     feature_path.write_text(json.dumps(feature_cols, indent=2))
     logger.info("Features saved: %s", feature_path)
 
+    # ── Build and save inference pipeline (processing + model) ────────────────
+    fitted_processing = table_transformer.fit_pipelines(raw_tables, labels_train_df)
+    logger.info("Fitted %d processing pipelines for inference", len(fitted_processing))
+
+    inference = InferencePipeline(
+        processing_pipelines=fitted_processing,
+        model_pipeline=final_model,
+        feature_names=feature_cols,
+        id_column=cfg.data.target.id_column,
+        cross_transformer=cross_transformer,
+    )
+
+    inference_path = model_dir / f"inference_pipeline_{run_mode}.pkl"
+    inference.save(inference_path)
+
     # ── Log to MLflow ──────────────────────────────────────────────────────────
     with ml_logger.start_run(run_name=f"{run_mode}_final_model"):
         ml_logger.log_flat_config(cfg)
@@ -384,6 +400,7 @@ def main() -> None:
         ml_logger.log_model(final_model, "final_model")
         ml_logger.log_file_artifact(str(model_path))
         ml_logger.log_file_artifact(str(feature_path))
+        ml_logger.log_file_artifact(str(inference_path))
         if shap_values is not None:
             ml_logger.log_file_artifact(str(shap_plot_path))
         plotter.log_to_mlflow(True)

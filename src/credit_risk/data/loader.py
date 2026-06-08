@@ -1,30 +1,30 @@
-"""Data loader module with polars eager and lazy implementations."""
+"""Config-aware loader wrappers — thin layer over credit_risk_data.
+
+Imports the core loader classes from the standalone ``credit_risk_data`` package
+and adds config-based path + CSV-name resolution for internal ``oc-p6`` scripts.
+
+External consumers should use ``credit_risk_data`` directly.
+"""
 
 from __future__ import annotations
 
-import logging
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
 
-import polars as pl
-
-if TYPE_CHECKING:
-    import pandas as pd
-
-logger = logging.getLogger(__name__)
-
-TABLE_NAMES = Literal[
-    "application",
-    "application_test",
-    "bureau",
-    "bureau_balance",
-    "previous_application",
-    "pos_cash_balance",
-    "credit_card_balance",
-    "installments",
-    "sample_submission",
-]
+from credit_risk_data.loader import (  # noqa: F401  — re-exported for backward compat
+    KNOWN_SCHEMA_OVERRIDES,
+    TABLE_LOAD_METHODS,
+    TABLE_NAMES,
+    BaseDataLoader,
+)
+from credit_risk_data.loader import (
+    PDDataLoader as _PDDataLoader,
+)
+from credit_risk_data.loader import (
+    PLDataLoader as _PLDataLoader,
+)
+from credit_risk_data.loader import (
+    PLLazyDataLoader as _PLLazyDataLoader,
+)
 
 
 def get_table_csv_names() -> dict[str, str]:
@@ -45,182 +45,36 @@ def get_table_csv_names() -> dict[str, str]:
     }
 
 
-# Populated lazily on first access
-_tables_csv_names: dict[str, str] | None = None
+def _resolve(data_path: Path | None) -> tuple[Path, dict[str, str]]:
+    """Resolve data_path and csv_names from config."""
+    from credit_risk.config import load_config
+    from credit_risk.config.config import PROJECT_ROOT
+
+    cfg = load_config()
+    csv_names = get_table_csv_names()
+    path = data_path or PROJECT_ROOT / cfg.data.data_dir
+    return path, csv_names
 
 
-def _get_tables_csv_names() -> dict[str, str]:
-    global _tables_csv_names
-    if _tables_csv_names is None:
-        _tables_csv_names = get_table_csv_names()
-    return _tables_csv_names
-
-
-# Known schema overrides per table — from audit script.
-KNOWN_SCHEMA_OVERRIDES: dict[str, dict[str, type[pl.DataType]]] = {
-    "bureau": {
-        "AMT_ANNUITY": pl.Float64,
-    },
-}
-
-# Registry: table name -> specialized load method name
-# Used by load() to dispatch to methods that join with link tables to get SK_ID_CURR
-TABLE_LOAD_METHODS: dict[str, str] = {
-    "bureau_balance": "load_bureau_balance",
-    "pos_cash_balance": "load_pos_cash_balance",
-    "credit_card_balance": "load_credit_card_balance",
-    "installments": "load_installments",
-}
-
-
-class BaseDataLoader(ABC):
-    """Abstract base class for data loaders.
-
-    Provides common path resolution, table registry, and link-joining logic.
-    Daughter classes implement _read_csv and _join for their specific framework.
-    """
+class PLDataLoader(_PLDataLoader):
+    """Polars eager loader with config-backed defaults."""
 
     def __init__(self, data_path: Path | None = None) -> None:
-        from credit_risk.config import load_config
-
-        cfg = load_config()
-
-        from credit_risk.config.config import PROJECT_ROOT
-
-        default_path = PROJECT_ROOT / cfg.data.data_dir
-        self._data_path = data_path or default_path
-
-    @property
-    def data_path(self) -> Path:
-        """Root directory containing CSV files."""
-        return self._data_path
-
-    @staticmethod
-    def available_tables() -> list[str]:
-        """Return the list of supported table names."""
-        return list(_get_tables_csv_names())
-
-    def table_path(self, name: str) -> Path:
-        """Resolve the CSV path for a given table name."""
-        tables = _get_tables_csv_names()
-        if name not in tables:
-            msg = f"Unknown table {name!r}. Available: {list(tables)}"
-            raise ValueError(msg)
-        return self._data_path / tables[name]
-
-    @abstractmethod
-    def _read_csv(
-        self, path: Path, schema_overrides: dict[str, type[pl.DataType]] | None = None
-    ) -> Any:
-        """Read a CSV file and return a dataframe."""
-
-    @abstractmethod
-    def _join(self, left: Any, right: Any, on: str) -> Any:
-        """Join two dataframes. Override in subclass for framework-specific behavior."""
-
-    def load(self, name: str) -> Any:
-        """Load a table by name, dispatching to specialized methods if needed.
-
-        Tables that require SK_ID_CURR join are loaded via their specialized method.
-        """
-        if name in TABLE_LOAD_METHODS:
-            method_name = TABLE_LOAD_METHODS[name]
-            logger.debug(f"Dispatching '{name}' to {method_name}")
-            return getattr(self, method_name)()
-        path = self.table_path(name)
-        known_overrides = KNOWN_SCHEMA_OVERRIDES.get(name)
-        if known_overrides:
-            logger.debug(f"Loading '{name}' with schema overrides: {list(known_overrides)}")
-            return self._read_csv(path, schema_overrides=known_overrides)
-        return self._read_csv(path)
-
-    def load_bureau_balance(self) -> Any:
-        """Load bureau_balance with SK_ID_CURR via bureau link."""
-        bb = self._read_csv(self.table_path("bureau_balance"))
-        link = self._read_csv(self.table_path("bureau")).select(["SK_ID_BUREAU", "SK_ID_CURR"])
-        return self._join(bb, link, "SK_ID_BUREAU")
-
-    def load_pos_cash_balance(self) -> Any:
-        """Load POS_CASH_balance with SK_ID_CURR via previous_application link."""
-        pos = self._read_csv(self.table_path("pos_cash_balance"))
-        link = self._read_csv(self.table_path("previous_application")).select(
-            ["SK_ID_PREV", "SK_ID_CURR"]
-        )
-        return self._join(pos, link, "SK_ID_PREV")
-
-    def load_credit_card_balance(self) -> Any:
-        """Load credit_card_balance with SK_ID_CURR via previous_application link."""
-        cc = self._read_csv(self.table_path("credit_card_balance"))
-        link = self._read_csv(self.table_path("previous_application")).select(
-            ["SK_ID_PREV", "SK_ID_CURR"]
-        )
-        return self._join(cc, link, "SK_ID_PREV")
-
-    def load_installments(self) -> Any:
-        """Load installments with SK_ID_CURR via previous_application link."""
-        ins = self._read_csv(self.table_path("installments"))
-        link = self._read_csv(self.table_path("previous_application")).select(
-            ["SK_ID_PREV", "SK_ID_CURR"]
-        )
-        return self._join(ins, link, "SK_ID_PREV")
-
-    def load_application_train(self) -> Any:
-        return self.load("application_train")
-
-    def load_application_test(self) -> Any:
-        return self.load("application_test")
-
-    def load_bureau(self) -> Any:
-        return self.load("bureau")
-
-    def load_previous_application(self) -> Any:
-        return self.load("previous_application")
-
-    def load_sample_submission(self) -> Any:
-        return self.load("sample_submission")
-
-    def load_labels(self) -> pl.LazyFrame:
-        """Load SK_ID_CURR and TARGET columns as lazy frame."""
-        return self.load("application").select(["SK_ID_CURR", "TARGET"]).lazy()
+        path, csv_names = _resolve(data_path)
+        super().__init__(data_path=path, csv_names=csv_names)
 
 
-class PLDataLoader(BaseDataLoader):
-    """Polars eager data loader."""
+class PLLazyDataLoader(_PLLazyDataLoader):
+    """Polars lazy loader with config-backed defaults."""
 
-    def _read_csv(
-        self, path: Path, schema_overrides: dict[str, pl.DataType] | None = None
-    ) -> pl.DataFrame:
-        return pl.read_csv(path, schema_overrides=schema_overrides or {})
-
-    def _join(
-        self, left: pl.LazyFrame | pl.DataFrame, right: pl.LazyFrame | pl.DataFrame, on: str
-    ) -> pl.LazyFrame | pl.DataFrame:
-        return left.join(right, on=on, how="left")
+    def __init__(self, data_path: Path | None = None) -> None:
+        path, csv_names = _resolve(data_path)
+        super().__init__(data_path=path, csv_names=csv_names)
 
 
-class PLLazyDataLoader(BaseDataLoader):
-    """Polars lazy data loader."""
+class PDDataLoader(_PDDataLoader):
+    """Pandas loader with config-backed defaults."""
 
-    def _read_csv(
-        self, path: Path, schema_overrides: dict[str, pl.DataType] | None = None
-    ) -> pl.LazyFrame:
-        return pl.scan_csv(path, schema_overrides=schema_overrides or {})
-
-    def _join(
-        self, left: pl.LazyFrame | pl.DataFrame, right: pl.LazyFrame | pl.DataFrame, on: str
-    ) -> pl.LazyFrame:
-        return left.join(right, on=on, how="left")
-
-
-class PDDataLoader(BaseDataLoader):
-    """Pandas data loader."""
-
-    def _read_csv(
-        self, path: Path, schema_overrides: dict[str, pl.DataType] | None = None
-    ) -> "pd.DataFrame":
-        import pandas as pd
-
-        return pd.read_csv(path)
-
-    def _join(self, left: "pd.DataFrame", right: "pd.DataFrame", on: str) -> "pd.DataFrame":
-        return left.merge(right, on=on, how="left")
+    def __init__(self, data_path: Path | None = None) -> None:
+        path, csv_names = _resolve(data_path)
+        super().__init__(data_path=path, csv_names=csv_names)
