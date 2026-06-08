@@ -27,27 +27,16 @@ Thumbs.db
 mlruns/
 mlflow.db
 *.db
-models/
-!src/credit_risk/models/
-!src/credit_risk/models/**
-src/credit_risk/models/**/__pycache__/
-*/__pycache__/*
+/models/
 *.pkl
 *.parquet
 
-# Data
-data/
-!src/credit_risk/data/
-!src/credit_risk/data/**
-src/credit_risk/data/**/__pycache__/
-!configs/data/
-!configs/data/**
+# Data (CSV datasets at project root — not source code in packages)
+/data/
 *.csv
 
- /notebooks/
- *.ipynb_checkpoints
- notebooks/*.ipynb
- notebooks/*.py
+# Notebooks
+/notebooks/
 
 # Coverage
 .coverage
@@ -58,8 +47,6 @@ htmlcov/
 .agents/
 AGENTS.md
 opencode.json
-/notebooks/
-
 .opencode/
 artifacts/
 catboost_info/
