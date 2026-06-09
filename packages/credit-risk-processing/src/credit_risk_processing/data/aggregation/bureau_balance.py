@@ -265,6 +265,7 @@ class _BaseBureauBalanceAggregator(StatelessStep):
     def transform(self, X: DataFrame, y=None) -> DataFrame:
         lf = X.lazy()
         lf = _compute_dpd(lf)
+        lf = lf.collect()
 
         bb_agg = lf.group_by("SK_ID_BUREAU", "SK_ID_CURR").agg(
             *_bureau_agg_exprs(self.BUREAU_FEATURES)
@@ -272,7 +273,7 @@ class _BaseBureauBalanceAggregator(StatelessStep):
 
         bb_agg = bb_agg.join(self._most_recent(lf), on="SK_ID_BUREAU", how="left")
 
-        return bb_agg.group_by("SK_ID_CURR").agg(*_curr_agg_exprs(self.BUREAU_FEATURES)).collect()
+        return bb_agg.group_by("SK_ID_CURR").agg(*_curr_agg_exprs(self.BUREAU_FEATURES))
 
     def _most_recent(self, df: LazyFrame) -> LazyFrame:
         return (

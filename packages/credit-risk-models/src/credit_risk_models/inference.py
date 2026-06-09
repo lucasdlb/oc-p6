@@ -111,18 +111,19 @@ class InferencePipeline:
 
         ids = merged.select(self.id_column).to_series().to_numpy()
 
-        available = set(merged.columns)
-        cols = [f for f in self.feature_names if f in available]
-        missing = [f for f in self.feature_names if f not in available]
-        if missing:
+        for f in self.feature_names:
+            if f not in merged.columns:
+                merged = merged.with_columns(pl.lit(None).cast(pl.Float64).alias(f))
+
+        missing = [f for f in self.feature_names if f not in merged.columns]
+        if missing:  # should be impossible now, but keep as safety net
             logger.warning(
-                "%d features from training not found in inference data: %s",
+                "%d features still missing after null injection: %s",
                 len(missing),
                 missing,
             )
-        logger.info("Using %d / %d features", len(cols), len(self.feature_names))
 
-        X = merged.select(cols).to_numpy()
+        X = merged.select(self.feature_names).to_numpy()
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
         probas = self.model_pipeline.predict_proba(X)
