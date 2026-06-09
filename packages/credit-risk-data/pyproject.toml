@@ -1,6 +1,6 @@
 [project]
 name = "credit-risk-data"
-version = "0.1.0"
+version = "0.1.1"
 description = "Credit risk data loaders — Polars and Pandas CSV loaders for Home Credit tables"
 requires-python = ">=3.12"
 dependencies = [
