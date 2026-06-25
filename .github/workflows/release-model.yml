@@ -1,0 +1,91 @@
+name: Release Model
+
+# Manual workflow: creates a GitHub Release and uploads the inference
+# pipeline pkl for a given environment tier (prod → dev → debug fallback).
+#
+# Trigger from the Actions UI:
+#   1. Go to Actions → "Release Model" → Run workflow
+#   2. Provide a tag (e.g. model-inference-v0.1.0)
+#   3. Select env_tier (prod, dev, or debug)
+#   4. Optional: add release notes
+#
+# Download in the inference API Dockerfile:
+#   RUN for tier in prod dev debug; do \
+#         curl -sfL "https://github.com/lucasdlb/oc-p6/releases/download/model-inference-v0.1.0/inference_pipeline_${tier}.pkl" \
+#           -o /app/model.pkl && break; \
+#       done
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. model-inference-v0.1.0)"
+        required: true
+        type: string
+      env_tier:
+        description: "Which pkl file to upload"
+        required: true
+        type: choice
+        default: debug
+        options:
+          - prod
+          - dev
+          - debug
+      notes:
+        description: "Optional release notes (plain text)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release-model:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve pkl file
+        id: pkl
+        run: |
+          TIER="${{ inputs.env_tier }}"
+          PKL_FILE="models/inference_pipeline_${TIER}.pkl"
+          if [[ ! -f "$PKL_FILE" ]]; then
+            echo "ERROR: $PKL_FILE not found in repo"
+            echo "Available files:"
+            ls -la models/inference_pipeline_*.pkl 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          echo "file=$PKL_FILE" >> "$GITHUB_OUTPUT"
+          echo "Uploading: $PKL_FILE ($(du -h "$PKL_FILE" | cut -f1))"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Write notes to a temp file if provided, else auto-generate
+          if [[ -n "${{ inputs.notes }}" ]]; then
+            echo "${{ inputs.notes }}" > release_notes.md
+          else
+            echo "Model inference pipeline (${{ inputs.env_tier }})" > release_notes.md
+          fi
+
+          gh release create \
+            "${{ inputs.tag }}" \
+            "${{ steps.pkl.outputs.file }}" \
+            --title "${{ inputs.tag }}" \
+            --notes-file release_notes.md \
+            --latest
+
+      - name: Print download URL
+        run: |
+          echo "## Model Release Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tag:** \`${{ inputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**File:** \`${{ steps.pkl.outputs.file }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tier:** ${{ inputs.env_tier }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download URL:" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`https://github.com/lucasdlb/oc-p6/releases/download/${{ inputs.tag }}/$(basename ${{ steps.pkl.outputs.file }})\`" >> "$GITHUB_STEP_SUMMARY"
