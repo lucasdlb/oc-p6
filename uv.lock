@@ -448,7 +448,7 @@ wheels = [
 
 [[package]]
 name = "credit-risk-data"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/credit-risk-data" }
 dependencies = [
     { name = "polars" },
@@ -463,7 +463,7 @@ requires-dist = [
 
 [[package]]
 name = "credit-risk-models"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/credit-risk-models" }
 dependencies = [
     { name = "credit-risk-processing" },
@@ -498,7 +498,7 @@ dev = [
 
 [[package]]
 name = "credit-risk-processing"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/credit-risk-processing" }
 dependencies = [
     { name = "lightgbm" },
