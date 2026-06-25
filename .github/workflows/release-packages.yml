@@ -1,0 +1,64 @@
+name: Release Packages
+
+on:
+  push:
+    tags:
+      - "credit-risk-data/v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for git-cliff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#credit-risk-data/v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+          echo "Version: $VERSION"
+
+      - name: Install git-cliff
+        uses: kenji-miyamoto/git-cliff-action@v1
+        with:
+          version: latest
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Generate full CHANGELOG.md
+          git-cliff --tag "${{ steps.version.outputs.tag }}" --output CHANGELOG.md
+          # Generate the body for this specific release only
+          git-cliff --tag "${{ steps.version.outputs.tag }}" --latest --strip header > release_notes.md
+          echo "Generated release notes"
+
+      - name: Commit CHANGELOG.md to main
+        run: |
+          if [[ -z "$(git status --porcelain CHANGELOG.md)" ]]; then
+            echo "CHANGELOG.md unchanged, skipping commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "docs: update CHANGELOG.md for packages/v${{ steps.version.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create \
+            "packages/v${{ steps.version.outputs.version }}" \
+            --title "Packages v${{ steps.version.outputs.version }}" \
+            --notes-file release_notes.md \
+            --latest
